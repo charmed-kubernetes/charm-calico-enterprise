@@ -1,0 +1,60 @@
+# This file defines charm config options, and populates the Configure tab on Charmhub.
+# If your charm does not require configuration options, delete this file entirely.
+#
+# See https://juju.is/docs/config for guidance.
+
+options:
+  tigera_version:
+    default: 'distro'
+    type: string
+    description: |
+      Calico Enterprise version to be used in the deployment. If "distro" is
+      selected, then the matching version for the k8s version is used.
+      If k8s is upgraded and there is a version mismatch, then the charm will
+      block with status "Tigera: upgrade needed"
+  auto_upgrade:
+    default: False
+    type: boolean
+    description: |
+      If tigera_version is set to "distro" and the cluster has been upgraded, then
+      tigera is also upgraded if "auto_upgrade" is set to True.
+      DO NOT USE THIS OPTION AS True IN PRODUCTION
+  disable_early_network:
+    default: True
+    type: boolean
+    description: |
+      Allow to choose if the early BGP setup happens prior to the kubernetes deployment
+      or not.
+      Moving to False is still under TESTING
+  mtu:
+    default: 1500
+    type: integer
+    description: |
+      MTU to be used by the containers interface. If encapsulation is set to VXLAN,
+      MTU=configured value - 50; IPIP, MTU=configured value - 20
+  bgp_parameters:
+    default: ''
+    type: string
+    description: |
+      If set, BGP will be configured in the early stage (pre-k8s) and passed on to k8s. 
+      If the configuration is unset or has a string len=0, then bgp_parameters is considered
+      empty. This option can be configured as follows:
+        $ juju config tigera bgp_parameters="$(cat bgp_params.yaml)"
+
+      For example:
+      bgp_parameters:
+      - <hostname>:
+        asn: <number>
+        stableAddress: <IP>
+        rack: <rack-name>
+        interfaceIPs:
+        - IP1
+        - IP2
+        - ...
+        peer_asns:
+        - peerIP: <1>
+          peerASN: <1>
+        - peerIP: <2>
+          peerASN: <2>
+        - ...
+

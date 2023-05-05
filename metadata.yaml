@@ -1,0 +1,25 @@
+name: tigera
+display-name: Tigera Calico Charm
+summary: The charm for Tigera's Calico EE
+
+description: |
+  The charm for Tigera's Calico EE
+
+subordinate: true
+series:
+  - jammy
+  - focal
+
+resources:
+  cnx-node-image:
+    type: file
+    filename: cnx-node-image.tar.gz
+    description: 'cnx-node resource tarball for amd64'
+
+requires:
+  cni:
+    interface: kubernetes-cni
+    scope: container
+peers:
+  tigera:
+    interface: tigera

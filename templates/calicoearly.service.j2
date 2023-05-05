@@ -1,0 +1,8 @@
+[Unit]
+Wants=network-online.target
+After=network-online.target
+[Service]
+ExecStartPre=-/bin/docker rm -f calico-early
+ExecStart=/bin/docker run --name calico-early --privileged --net=host   -v /calico-early:/calico-early -e CALICO_EARLY_NETWORKING=/calico-early/cfg.yaml quay.io/tigera/cnx-node:{{ calico_enterprise_image_tag }}
+[Install]
+WantedBy=multi-user.target
