@@ -1,0 +1,19 @@
+apiVersion: crd.projectcalico.org/v1
+kind: IPPool
+metadata:
+  name: default-pool
+spec:
+  blockSize: {{ pod_cidr_range }}
+  cidr: {{ pod_cidr }}
+  ipipMode: Always
+  nodeSelector: all()
+  vxlanMode: Never
+---
+apiVersion: crd.projectcalico.org/v1
+kind: IPPool
+metadata:
+  name: k8s-nodes-stable-pool
+spec:
+  cidr: {{ stable_ip_cidr }}
+  disabled: true
+  nodeSelector: all()

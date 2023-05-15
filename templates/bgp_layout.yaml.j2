@@ -4,16 +4,16 @@ spec:
  nodes:
 {% for host in bgp_parameters %}
  - interfaceAddresses:
-{% for ip in host.interfaceIPs %}
-     - {{ ip }}
+{% for ip in host.interfaces %}
+     - {{ ip.IP }}
 {% endfor %}
    stableAddress:
      address: {{ host.stableAddress }}
    asNumber: {{ host.asn }}
    peerings:
-{% for asn in host.peer_asns %}
-     - peerIP: {{ host.peerIP }}
-     - peerASN: {{ host.peerASN }}
+{% for asn in host.interfaces %}
+     - peerIP: {{ asn.peerIP }}
+     - peerASN: {{ asn.peerASN }}
 {% endfor %}
    labels:
      rack: {{ host.rack }}

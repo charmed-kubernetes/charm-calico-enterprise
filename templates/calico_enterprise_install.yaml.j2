@@ -1,0 +1,21 @@
+# This section includes base Calico Enterprise installation configuration.
+# For more information, see: https://docs.tigera.io/calico-enterprise/3.15/reference/installation/api#operator.tigera.io/v1.Installation
+kind: Installation
+metadata:
+  name: default
+spec:
+  # Install Calico Enterprise
+  variant: TigeraSecureEnterprise
+  {% image_registry +%}
+  registry: {{ image_registry }}
+  {% image_registry_secret +%}
+  imagePullSecrets:
+    - name: tigera-pull-secret
+  {% endif %}
+  {% image_path +%}
+  imagePath:  {{ image_path }}
+  {% endif %}
+  {% image_prefix +%}
+  imagePrefix:  {{ image_prefix }}
+  {% endif %}
+  {% endif %}

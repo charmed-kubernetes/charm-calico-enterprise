@@ -4,6 +4,57 @@
 # See https://juju.is/docs/config for guidance.
 
 options:
+  pod_cidr:
+    default: ""
+    type: string
+    description: |
+      Pod to Pod network CIDR used by each pod
+  license:
+    default: ""
+    type: string
+    description: |
+      License file converted into base64 following the command:
+        $ juju config tigera license="$(cat license | base64 -w0)"
+  addons:
+    default: False
+    type: boolean
+    description: |
+      Installs addons from Tigera.
+  addons_storage_class:
+    default: ""
+    type: string
+    description: |
+      Storage class name to be used in the addons deployment.
+  stable_ip_cidr:
+    default: ""
+    type: string
+    description: |
+      Stable IP network used by all the nodes involved in the cluster
+  image_registry:
+    default: "quay.io"
+    type: string
+    description: |
+      Image registry for the tigera image. Defaults to quay.io
+  image_path:
+    default: ""
+    type: string
+    description: |
+      Specifies the image in the format:
+      <imagePath>/<imagePrefix><imageName>:<image-tag>
+      If left empty, it is not defined
+  image_prefix:
+    default: ""
+    type: string
+    description: |
+      Specifies the image in the format:
+      <imagePath>/<imagePrefix><imageName>:<image-tag>
+      If left empty, it is not defined
+  image_registry_secret:
+    default: ""
+    type: string
+    description: |
+      String in the format of "user:password". Passed as a secret named
+      tigera-pull-secret.
   tigera_version:
     default: 'distro'
     type: string
@@ -47,14 +98,12 @@ options:
         asn: <number>
         stableAddress: <IP>
         rack: <rack-name>
-        interfaceIPs:
-        - IP1
-        - IP2
-        - ...
-        peer_asns:
-        - peerIP: <1>
+        interfaces:
+        - IP: IP1
+          peerIP: <1>
           peerASN: <1>
-        - peerIP: <2>
+        - IP: IP2
+          peerIP: <2>
           peerASN: <2>
         - ...
 

@@ -1,0 +1,23 @@
+{% for host in bgp_parameters %}
+{% for leaf in host.interfaces %}
+apiVersion: crd.projectcalico.org/v1
+kind: BGPPeer
+metadata:
+  name: {{host.rack}}-{{leaf.peerIP}}
+spec:
+  peerIP: {{leaf.peerIP}}
+  asNumber: {{leaf.peerASN}}
+  nodeSelector: rack == '{{host.rack}}'
+  sourceAddress: None
+  failureDetectionMode: BFDIfDirectlyConnected
+  restartMode: LongLivedGracefulRestart
+
+---
+{% endfor %}
+{% endfor %}
+apiVersion: crd.projectcalico.org/v1
+kind: BGPConfiguration
+metadata:
+  name: default
+spec:
+  nodeToNodeMeshEnabled: false
