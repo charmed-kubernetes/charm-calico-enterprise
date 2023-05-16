@@ -79,7 +79,7 @@ options:
       Moving to False is still under TESTING
   mtu:
     default: 1500
-    type: integer
+    type: int
     description: |
       MTU to be used by the containers interface. If encapsulation is set to VXLAN,
       MTU=configured value - 50; IPIP, MTU=configured value - 20
