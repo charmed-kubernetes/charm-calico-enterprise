@@ -21,6 +21,7 @@ import traceback
 from base64 import b64decode
 from subprocess import check_output
 
+import yaml
 from conctl import getContainerRuntimeCtl
 from jinja2 import Environment, FileSystemLoader
 from ops.charm import CharmBase
@@ -141,6 +142,11 @@ class TigeraCharm(CharmBase):
     def get_ip_range(self, n):
         """Return the # of bits that compose its range from an IPAddress."""
         return str(n).split("/")[1]
+
+    @property
+    def bgp_parameters(self):
+        """Return bgp parameter as a dict."""
+        return yaml.safe_load(self.model.config["bgp_parameters"])
 
     #######################
     ### Tigera  Methods ###
@@ -287,23 +293,21 @@ class TigeraCharm(CharmBase):
         self.render_template(
             "bgp_layout.yaml.j2",
             "/tmp/bgp_layout.yaml",
-            **{"bgp_parameters": self.model.config["bgp_parameters"]},
+            bgp_parameters=self.bgp_parameters,
         )
         self.kubectl("apply", "-f", "-", "/tmp/bgp_layout.yaml")
         self.render_template(
             "bgppeer.yaml.j2",
             "/tmp/bgppeer.yaml",
-            **{"bgp_parameters": self.model.config["bgp_parameters"]},
+            bgp_parameters=self.bgp_parameters,
         )
         self.kubectl("apply", "-f", "-", "/tmp/bgppeer.yaml")
         self.render_template(
             "ippools.yaml.j2",
             "/tmp/ippools.yaml",
-            **{
-                "pod_cidr_range": self.get_ip_range(self.model.config["pod_cidr"]),
-                "pod_cidr": self.model.config["pod_cidr"],
-                "stable_ip_cidr": self.model.config["stable_ip_cidr"],
-            },
+            pod_cidr_range=self.get_ip_range(self.model.config["pod_cidr"]),
+            pod_cidr=self.model.config["pod_cidr"],
+            stable_ip_cidr=self.model.config["stable_ip_cidr"],
         )
         self.kubectl("apply", "-f", "-", "/tmp/ippools.yaml")
 

@@ -2,19 +2,19 @@ apiVersion: projectcalico.org/v3
 kind: EarlyNetworkConfiguration
 spec:
  nodes:
-{% for host in bgp_parameters %}
+{%- for host in bgp_parameters %}
  - interfaceAddresses:
-{% for ip in host.interfaces %}
+{%- for ip in host.interfaces %}
      - {{ ip.IP }}
-{% endfor %}
+{%- endfor %}
    stableAddress:
      address: {{ host.stableAddress }}
    asNumber: {{ host.asn }}
    peerings:
-{% for asn in host.interfaces %}
+{%- for asn in host.interfaces %}
      - peerIP: {{ asn.peerIP }}
      - peerASN: {{ asn.peerASN }}
-{% endfor %}
+{%- endfor %}
    labels:
      rack: {{ host.rack }}
-{% endfor %} 
+{%- endfor %}

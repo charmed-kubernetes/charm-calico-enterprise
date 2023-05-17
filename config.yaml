@@ -93,8 +93,7 @@ options:
         $ juju config tigera bgp_parameters="$(cat bgp_params.yaml)"
 
       For example:
-      bgp_parameters:
-      - <hostname>:
+      - hostname: <hostname>
         asn: <number>
         stableAddress: <IP>
         rack: <rack-name>

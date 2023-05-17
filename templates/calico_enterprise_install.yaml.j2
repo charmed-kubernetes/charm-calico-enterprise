@@ -6,16 +6,16 @@ metadata:
 spec:
   # Install Calico Enterprise
   variant: TigeraSecureEnterprise
-  {% image_registry +%}
+  {%- if image_registry %}
   registry: {{ image_registry }}
-  {% image_registry_secret +%}
+  {%- if image_registry_secret %}
   imagePullSecrets:
     - name: tigera-pull-secret
-  {% endif %}
-  {% image_path +%}
+  {%- endif %}
+  {%- if image_path %}
   imagePath:  {{ image_path }}
-  {% endif %}
-  {% image_prefix +%}
+  {%- endif %}
+  {%- if image_prefix %}
   imagePrefix:  {{ image_prefix }}
-  {% endif %}
-  {% endif %}
+  {%- endif %}
+  {%- endif %}
