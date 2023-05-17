@@ -115,7 +115,7 @@ class TigeraCharm(CharmBase):
     def configure_cni_relation(self):
         """Get."""
         self.unit.status = MaintenanceStatus("Configuring CNI relation")
-        cidr = self.model.config["default-cidr"]
+        cidr = self.model.config["pod_cidr"]
         for relation in self.model.relations["cni"]:
             relation.data[self.unit]["cidr"] = cidr
             relation.data[self.unit]["cni-conf-file"] = "01-tigera.conflist"
@@ -276,7 +276,7 @@ class TigeraCharm(CharmBase):
         self.render_template(
             "templates/calico_bgp_layout.yaml.j2",
             "/calico-early/cfg.yaml",
-            **self.config["bgp_parameters"],
+            bgp_parameters=self.config["bgp_parameters"],
         )
 
     def waiting_for_cni_relation(self):
@@ -412,12 +412,10 @@ class TigeraCharm(CharmBase):
         self.render_template(
             "calico_enterprise_install.yaml.j2",
             "/tmp/calico_enterprise_install.yaml",
-            {
-                "image_registry": self.model.config["image_registry"],
-                "image_registry_secret": self.model.config["image_registry_secret"],
-                "image_path": self.model.config["image_path"],
-                "image_prefix": self.model.config["image_prefix"],
-            },
+            image_registry=self.model.config["image_registry"],
+            image_registry_secret=self.model.config["image_registry_secret"],
+            image_path=self.model.config["image_path"],
+            image_prefix=self.model.config["image_prefix"],
         )
         self.kubectl("apply", "-f", "-", "/tmp/calico_enterprise_install.yaml")
 
@@ -434,7 +432,7 @@ class TigeraCharm(CharmBase):
             self.render_template(
                 "addons.yaml.j2",
                 "/tmp/addons.yaml",
-                {"addons_storage_class": self.model.config["addons_storage_class"]},
+                addons_storage_class=self.model.config["addons_storage_class"],
             )
             self.kubectl("apply", "-f", "-", "/tmp/addons.yaml")
 

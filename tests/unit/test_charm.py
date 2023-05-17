@@ -9,7 +9,10 @@ import unittest.mock as mock
 import ops.testing
 import pytest
 from charm import TigeraCharm
-from ops.model import WaitingStatus
+from ops.model import MaintenanceStatus, WaitingStatus
+
+DEFAULT_SERVICE_CIDR = "10.152.183.0/24"
+
 
 TEST_CONFIGURE_BGP_INPUT = """- hostname: test
   asn: 1
@@ -108,9 +111,8 @@ def test_kubectl(mock_check_output, charm):
 
 
 @pytest.mark.usefixtures
-@mock.patch("jinja2.environment.TemplateStream.dump", autospec=True)
 @mock.patch("jinja2.environment.Template.stream", autospec=True)
-def test_configure_bgp(mock_stream, mock_dump, charm, harness):
+def test_configure_bgp(mock_stream, charm, harness):
     config_dict = {
         "stable_ip_cidr": "192.168.1.0/24",
         "pod_cidr": "192.168.10.0/24",
@@ -133,3 +135,82 @@ def test_configure_bgp(mock_stream, mock_dump, charm, harness):
         )
         == TEST_CONFIGURE_BGP_IPPOOLS_YAML
     )
+
+
+def test_is_kubeconfig_available(harness, charm):
+    harness.disable_hooks()
+    rel_id = harness.add_relation("cni", "kubernetes-control-plane")
+    harness.add_relation_unit(rel_id, "kubernetes-control-plane/0")
+    assert not charm.is_kubeconfig_available()
+
+    harness.update_relation_data(rel_id, "kubernetes-control-plane/0", {"kubeconfig-hash": "1234"})
+    assert charm.is_kubeconfig_available()
+
+
+def test_get_service_cidr(harness, charm):
+    harness.disable_hooks()
+    rel_id = harness.add_relation("tigera", "tigera")
+    harness.add_relation_unit(rel_id, "tigera/0")
+    assert not charm.tigera_peer_data("service-cidr")
+
+    harness.update_relation_data(
+        rel_id,
+        "tigera/0",
+        {"service-cidr": DEFAULT_SERVICE_CIDR},
+    )
+    assert charm.tigera_peer_data("service-cidr") == DEFAULT_SERVICE_CIDR
+
+    harness.add_relation_unit(rel_id, "tigera/1")
+    harness.update_relation_data(
+        rel_id,
+        "tigera/1",
+        {"service-cidr": "working"},
+    )
+    assert charm.tigera_peer_data("service-cidr") is None
+
+
+def test_configure_cni_relation(harness, charm):
+    harness.disable_hooks()
+    config_dict = {"pod_cidr": "172.22.0.0/16"}
+    harness.update_config(config_dict)
+    rel_id = harness.add_relation("cni", "kubernetes-control-plane")
+    harness.add_relation_unit(rel_id, "kubernetes-control-plane/0")
+
+    charm.configure_cni_relation()
+    assert charm.unit.status == MaintenanceStatus("Configuring CNI relation")
+    assert len(harness.model.relations["cni"]) == 1
+    relation = harness.model.relations["cni"][0]
+    assert relation.data[charm.unit] == {
+        "cidr": "172.22.0.0/16",
+        "cni-conf-file": "01-tigera.conflist",
+    }
+
+
+"""
+@pytest.mark.skip_kubectl_mock
+@pytest.mark.usefixtures
+@mock.patch("jinja2.environment.Template.stream", autospec=True)
+def test_configure_bgp(mock_stream, charm, harness):
+    config_dict = {
+        "stable_ip_cidr": "192.168.1.0/24",
+        "pod_cidr": "192.168.10.0/24",
+        "bgp_parameters": TEST_CONFIGURE_BGP_INPUT,
+    }
+    harness.update_config(config_dict)
+    charm.configure_bgp()
+    _, args, _ = mock_stream.mock_calls[0]
+    assert args[0].render(bgp_parameters=charm.bgp_parameters) == TEST_CONFIGURE_BGP_BGPLAYOUT_YAML
+
+    _, args, _ = mock_stream.mock_calls[2]
+    assert args[0].render(bgp_parameters=charm.bgp_parameters) == TEST_CONFIGURE_BGP_BGPPEER_YAML
+
+    _, args, _ = mock_stream.mock_calls[4]
+    assert (
+        args[0].render(
+            pod_cidr_range=charm.get_ip_range(config_dict["pod_cidr"]),
+            pod_cidr=config_dict["pod_cidr"],
+            stable_ip_cidr=config_dict["stable_ip_cidr"],
+        )
+        == TEST_CONFIGURE_BGP_IPPOOLS_YAML
+    )
+"""
