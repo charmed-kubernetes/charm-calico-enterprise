@@ -5,7 +5,7 @@
 
 options:
   pod_cidr:
-    default: ""
+    default: "192.168.0.0/16"
     type: string
     description: |
       Pod to Pod network CIDR used by each pod

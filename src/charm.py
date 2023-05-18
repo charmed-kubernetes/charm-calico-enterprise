@@ -76,10 +76,14 @@ class TigeraCharm(CharmBase):
         self.framework.observe(self.on.update_status, self.on_update_status)
         self.framework.observe(self.on.upgrade_charm, self.on_upgrade_charm)
         self.framework.observe(self.on.cni_relation_joined, self.on_cni_relation_joined)
+        self.framework.observe(
+            self.on.cni_relation_changed, self.on_cni_relation_changed
+        )
         self.framework.observe(self.on.tigera_relation_changed, self.on_config_changed)
 
         self.stored.set_default(tigera_configured=False)
         self.stored.set_default(pod_restart_needed=False)
+        self.stored.set_default(tigera_cni_configured=False)
 
         try:
             self.CTL = getContainerRuntimeCtl()
@@ -94,7 +98,7 @@ class TigeraCharm(CharmBase):
     def kubectl(self, *args):
         """Kubectl command implementation."""
         cmd = ["kubectl", "--kubeconfig", KUBECONFIG_PATH] + list(args)
-        return check_output(cmd)
+        return check_output(cmd).decode('utf-8')
 
     def is_kubeconfig_available(self):
         """Check if CNI relation exists and if kubeconfig is available."""
@@ -111,6 +115,22 @@ class TigeraCharm(CharmBase):
     def registry(self):
         """Return image registry from config."""
         return self.model.config["image_registry"]
+
+    def cni_to_tigera(self, event):
+        """Repeat received CNI relation data to each kube-ovn unit.
+
+        CNI relation data is received over the cni relation only from
+        kubernetes-control-plane units.  the kube-ovn peer relation
+        shares the value around to each kube-ovn unit.
+        """
+        log.debug("Sending CNI data over relation")
+        for key in ["service-cidr", "image-registry"]:
+            cni_data = event.relation.data[event.unit].get(key)
+            log.debug("CNI data: %s", cni_data)
+            if not cni_data:
+                continue
+            for relation in self.model.relations["tigera"]:
+                relation.data[self.unit][key] = cni_data
 
     def configure_cni_relation(self):
         """Get."""
@@ -198,7 +218,7 @@ class TigeraCharm(CharmBase):
     def kubernetes_version(self):
         """Returns the k8s version."""
         return ".".join(
-            self.kubectl("kubectl", "version", "--server", "--short")
+            self.kubectl("version", "--short")
             .split("Server Version: v")[1]
             .split(".")[:2]
         )
@@ -311,9 +331,14 @@ class TigeraCharm(CharmBase):
         )
         self.kubectl("apply", "-f", "-", "/tmp/ippools.yaml")
 
+    def set_active_status(self):
+        if self.stored.kube_ovn_configured:
+            self.unit.status = ActiveStatus()
     ###########################
     ### Charm Event Methods ###
     ###########################
+
+
 
     def on_install(self, event):
         """Installation routine.
@@ -335,10 +360,16 @@ class TigeraCharm(CharmBase):
         if self.waiting_for_cni_relation():
             self.unit.status = WaitingStatus("Waiting for CNI relation")
             return
+    
+    def on_cni_relation_changed(self, event):
+        self.cni_to_tigera(event)
+        self.configure_cni_relation()
+        self.set_active_status()
 
     def on_cni_relation_joined(self, event):
         """Run CNI relation joined hook."""
         self.configure_cni_relation()
+        self.set_active_status()
 
     def on_remove(self, event):
         """Run Remove hook."""
@@ -361,7 +392,7 @@ class TigeraCharm(CharmBase):
         if self.preflight_checks():
             return
         service_cidr = self.tigera_peer_data("service-cidr")
-
+        # TODO: This prevents CIDR change
         if self.waiting_for_cni_relation():
             self.unit.status = WaitingStatus("Waiting for CNI relation")
             return
