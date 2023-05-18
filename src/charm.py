@@ -20,6 +20,7 @@ import time
 import traceback
 from base64 import b64decode
 from subprocess import check_output
+import tempfile
 
 import yaml
 from conctl import getContainerRuntimeCtl
@@ -232,7 +233,10 @@ class TigeraCharm(CharmBase):
         if not version:
             raise TigeraCalicoError(0, "K8s and tigera version mismatch")
         url = f"https://downloads.tigera.io/ee/v{version}/manifests/tigera-operator.yaml"
-        self.kubectl("apply", "-f", url)
+        try:
+            self.kubectl("create", "-f", url)
+        except:
+            pass
 
     def check_tigera_operator_deployment_status(self):
         """Check if  tigera operator is ready.
@@ -257,7 +261,7 @@ class TigeraCharm(CharmBase):
 
         if not image or os.path.getsize(image) == 0:
             self.unit.status = MaintenanceStatus('Pulling cnx-node image')
-            image = self.config['cnx-node-image']
+            image = self.config['cnx-node-image']NamedTemporaryFile
             set_http_proxy()
             CTL.pull(image)
         else:
@@ -275,12 +279,15 @@ class TigeraCharm(CharmBase):
         Returns True if the tigera is ready.
         """
         output = self.kubectl(
-            "get",
-            "tigerastatuses.operator.tigera.io",
-            "calico",
-            """-o=jsonpath='{.status.conditions[?(@.type=="Available")].status}'""",
+            "wait",
+            "-n",
+            "tigera-operator",
+            "--for=condition=ready",
+            "pod",
+            "-l",
+            "k8s-app=tigera-operator"
         )
-        return True if "True" in output else False
+        return True if "met" in output else False
 
     def implement_early_network(self):
         """Implement the Early Network.
@@ -425,7 +432,7 @@ class TigeraCharm(CharmBase):
                 + '","email":""}}}\''
             )
             self.kubectl(
-                "apply",
+                "create",
                 "secret",
                 "generic",
                 "tigera-pull-secret",
@@ -434,7 +441,10 @@ class TigeraCharm(CharmBase):
                 "-n",
                 "tigera-operator",
             )
-        self.kubectl("apply", "-f", b64decode(self.model.config["license"]).rstrip())
+
+        license = tempfile.NamedTemporaryFile('w', delete=False)
+        license.write(b64decode(self.model.config["license"]).rstrip().decode('utf-8'))
+        self.kubectl("apply", "-f", license.name)
 
         self.unit.status = MaintenanceStatus("Generating bgp yamls...")
         self.configure_bgp()
@@ -448,11 +458,11 @@ class TigeraCharm(CharmBase):
             image_path=self.model.config["image_path"],
             image_prefix=self.model.config["image_prefix"],
         )
-        self.kubectl("apply", "-f", "-", "/tmp/calico_enterprise_install.yaml")
+        self.kubectl("apply", "-f", "/tmp/calico_enterprise_install.yaml")
 
         self.kubectl(
             "patch",
-            "bgpconfiguration.projectcalico.org",
+            "bgpconfigurations.projectcalico.org",
             "default",
             "-p",
             '\'{"spec":{"serviceClusterIPs": [{"cidr": "{{' + service_cidr + "}}\"}]}}'",
