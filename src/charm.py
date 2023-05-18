@@ -431,6 +431,11 @@ class TigeraCharm(CharmBase):
                 + self.model.config["image_registry_secret"]
                 + '","email":""}}}\''
             )
+            # this worked to create the credential
+            # kubectl --kubeconfig /root/.kube/config create secret \
+            # docker-registry tigera-pull-secret --docker-server="quay.io" \ 
+            # --docker-username="USER" --docker-password="PASS" \
+            #  -n tigera-operator --dry-run -o yaml | kubectl --kubeconfig /root/.kube/config apply -f -
             self.kubectl(
                 "create",
                 "secret",
@@ -458,15 +463,21 @@ class TigeraCharm(CharmBase):
             image_path=self.model.config["image_path"],
             image_prefix=self.model.config["image_prefix"],
         )
-        self.kubectl("apply", "-f", "/tmp/calico_enterprise_install.yaml")
-
-        self.kubectl(
-            "patch",
-            "bgpconfigurations.projectcalico.org",
-            "default",
-            "-p",
-            '\'{"spec":{"serviceClusterIPs": [{"cidr": "{{' + service_cidr + "}}\"}]}}'",
+        self.render_template(
+            "bgpconfiguration.yaml.j2",
+            "/tmp/calico_bgp_configuration.yaml",
+            service_cidr=service_cidr
         )
+        self.kubectl("apply", "-f", "/tmp/calico_enterprise_install.yaml")
+        self.kubectl("apply", "-f", "/tmp/calico_bgp_configuration.yaml")
+
+        # self.kubectl(
+        #     "patch",
+        #     "bgpconfigurations.projectcalico.org",
+        #     "default",
+        #     "-p",
+        #     '\'{"spec":{"serviceClusterIPs": [{"cidr": "{{' + service_cidr + "}}\"}]}}'",
+        # )
 
         if self.model.config["addons"]:
             self.unit.status = MaintenanceStatus("Applying Addons")
