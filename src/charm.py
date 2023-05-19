@@ -339,7 +339,7 @@ class TigeraCharm(CharmBase):
         self.kubectl("apply", "-f", "-", "/tmp/ippools.yaml")
 
     def set_active_status(self):
-        if self.stored.kube_ovn_configured:
+        if self.stored.tigera_cni_configured:
             self.unit.status = ActiveStatus()
     ###########################
     ### Charm Event Methods ###
@@ -376,6 +376,7 @@ class TigeraCharm(CharmBase):
     def on_cni_relation_joined(self, event):
         """Run CNI relation joined hook."""
         self.configure_cni_relation()
+        self.on_config_changed()
         self.set_active_status()
 
     def on_remove(self, event):
@@ -424,13 +425,6 @@ class TigeraCharm(CharmBase):
 
         self.unit.status = MaintenanceStatus("Configuring image secret and license file...")
         if self.model.config["image_registry"] and self.model.config["image_registry_secret"]:
-            image_secret = (
-                '\'{"auths":{"'
-                + self.model.config["image_registry"]
-                + '":{"auth":"'
-                + self.model.config["image_registry_secret"]
-                + '","email":""}}}\''
-            )
             # this worked to create the credential
             # kubectl --kubeconfig /root/.kube/config create secret \
             # docker-registry tigera-pull-secret --docker-server="quay.io" \ 
@@ -439,10 +433,10 @@ class TigeraCharm(CharmBase):
             self.kubectl(
                 "create",
                 "secret",
-                "generic",
+                "docker-registry",
                 "tigera-pull-secret",
-                f"--from-literal=.dockerconfigjson={image_secret}",
-                "--type=kubernetes.io/dockerconfigjson",
+                f"--docker-username={self.model.config['image_registry_secret'].split(':')[0]}",
+                f"--docker-password={self.model.config['image_registry_secret'].split(':')[1]}",
                 "-n",
                 "tigera-operator",
             )
