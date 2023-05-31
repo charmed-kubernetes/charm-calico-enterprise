@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
 
-TIGERA_DISTRO_VERSIONS = {"1.26": "3.15.2"}
+TIGERA_DISTRO_VERSIONS = {"1.26": "3.16.1", "1.25": "3.15.2"}
 KUBECONFIG_PATH = "/root/.kube/config"
 PLUGINS_PATH = "/usr/local/bin"
 
@@ -180,6 +180,11 @@ class TigeraCharm(CharmBase):
 
         Returns True if successful on all checks pass, False otherwise.
         """
+
+        if not self.model.config["bgp_parameters"]:
+            self.unit.status = BlockedStatus("BGP configuration is required.")
+            return False
+    
         if not self.model.config["license"]:
             self.unit.status = BlockedStatus("Missing license config")
             return False
@@ -194,24 +199,24 @@ class TigeraCharm(CharmBase):
         except ValueError:
             self.unit.status = BlockedStatus("Stable IP network is not valid CIDR")
             return False
+        # TODO: Fix this logic check.
+        # hostname_found = False
+        # for hostname, p in self.bgp_parameters:
+        #     s = p["stableAddress"]
+        #     if ipaddress.ip_address(s) not in stable_ip_cidr:
+        #         self.unit.status = BlockedStatus(f"{s} is not present in {stable_ip_cidr}")
+        #         return False
+        #     if hostname == socket.get_hostname():
+        #         hostname_found = True
+        # if not hostname_found:
+        #     self.unit.status = BlockedStatus("This node has no entry in the bgp_parameters")
+        #     return False
 
-        hostname_found = False
-        for hostname, p in self.model.config["bgp_parameters"].items():
-            s = p["stableAddress"]
-            if ipaddress.ip_address(s) not in stable_ip_cidr:
-                self.unit.status = BlockedStatus(f"{s} is not present in {stable_ip_cidr}")
-                return False
-            if hostname == socket.get_hostname():
-                hostname_found = True
-        if not hostname_found:
-            self.unit.status = BlockedStatus("This node has no entry in the bgp_parameters")
-            return False
-
-        if self.model.config["addons"] and not self.model.config["addons_storage_class"]:
-            self.unit.status = BlockedStatus(
-                "Addons specified but missing addons_storage_class info"
-            )
-            return False
+        # if self.model.config["addons"] and not self.model.config["addons_storage_class"]:
+        #     self.unit.status = BlockedStatus(
+        #         "Addons specified but missing addons_storage_class info"
+        #     )
+        #     return False
 
         return True
 
@@ -315,6 +320,11 @@ class TigeraCharm(CharmBase):
     def configure_bgp(self):
         """Configure BGP according to the charm options."""
         bgp_parameters = self.model.config["bgp_parameters"]
+        try:
+            self.kubectl("create", "ns", "tigera-operator")
+            self.kubectl("create", "ns", "calico-system")
+        except:
+            pass
         if not bgp_parameters:
             return
         self.render_template(
@@ -322,13 +332,13 @@ class TigeraCharm(CharmBase):
             "/tmp/bgp_layout.yaml",
             bgp_parameters=self.bgp_parameters,
         )
-        self.kubectl("apply", "-f", "-", "/tmp/bgp_layout.yaml")
+        self.kubectl("apply", "-n", "tigera-operator", "-f", "/tmp/bgp_layout.yaml")
         self.render_template(
             "bgppeer.yaml.j2",
             "/tmp/bgppeer.yaml",
             bgp_parameters=self.bgp_parameters,
         )
-        self.kubectl("apply", "-f", "-", "/tmp/bgppeer.yaml")
+        self.kubectl("apply", "-n", "tigera-operator", "-f", "/tmp/bgppeer.yaml")
         self.render_template(
             "ippools.yaml.j2",
             "/tmp/ippools.yaml",
@@ -336,7 +346,7 @@ class TigeraCharm(CharmBase):
             pod_cidr=self.model.config["pod_cidr"],
             stable_ip_cidr=self.model.config["stable_ip_cidr"],
         )
-        self.kubectl("apply", "-f", "-", "/tmp/ippools.yaml")
+        self.kubectl("apply", "-n", "tigera-operator", "-f", "/tmp/ippools.yaml")
 
     def set_active_status(self):
         if self.stored.tigera_cni_configured:
@@ -375,8 +385,9 @@ class TigeraCharm(CharmBase):
 
     def on_cni_relation_joined(self, event):
         """Run CNI relation joined hook."""
+        self.cni_to_tigera(event)
         self.configure_cni_relation()
-        self.on_config_changed()
+        # self.on_config_changed(event)
         self.set_active_status()
 
     def on_remove(self, event):
@@ -397,7 +408,7 @@ class TigeraCharm(CharmBase):
         3) Apply tigera operator
         """
         self.stored.tigera_configured = False
-        if self.preflight_checks():
+        if not self.preflight_checks():
             return
         service_cidr = self.tigera_peer_data("service-cidr")
         # TODO: This prevents CIDR change
@@ -425,11 +436,16 @@ class TigeraCharm(CharmBase):
 
         self.unit.status = MaintenanceStatus("Configuring image secret and license file...")
         if self.model.config["image_registry"] and self.model.config["image_registry_secret"]:
-            # this worked to create the credential
-            # kubectl --kubeconfig /root/.kube/config create secret \
-            # docker-registry tigera-pull-secret --docker-server="quay.io" \ 
-            # --docker-username="USER" --docker-password="PASS" \
-            #  -n tigera-operator --dry-run -o yaml | kubectl --kubeconfig /root/.kube/config apply -f -
+            try:
+                self.kubectl(
+                    "delete",
+                    "secret",
+                    "tigera-pull-secret",
+                    "-n",
+                    "tigera-operator",
+                )
+            except:
+                pass
             self.kubectl(
                 "create",
                 "secret",
@@ -437,12 +453,13 @@ class TigeraCharm(CharmBase):
                 "tigera-pull-secret",
                 f"--docker-username={self.model.config['image_registry_secret'].split(':')[0]}",
                 f"--docker-password={self.model.config['image_registry_secret'].split(':')[1]}",
+                f"--docker-server={self.model.config['image_registry']}",
                 "-n",
                 "tigera-operator",
             )
-
         license = tempfile.NamedTemporaryFile('w', delete=False)
         license.write(b64decode(self.model.config["license"]).rstrip().decode('utf-8'))
+        license.flush()
         self.kubectl("apply", "-f", license.name)
 
         self.unit.status = MaintenanceStatus("Generating bgp yamls...")

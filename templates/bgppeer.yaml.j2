@@ -1,5 +1,5 @@
 {%- for host in bgp_parameters -%}
-{%- for leaf in host.interfaces -%}
+{%- for leaf in host.interfaces%}
 apiVersion: crd.projectcalico.org/v1
 kind: BGPPeer
 metadata:

@@ -5,7 +5,7 @@ metadata:
 spec:
   blockSize: {{ pod_cidr_range }}
   cidr: {{ pod_cidr }}
-  ipipMode: Always
+  ipipMode: Never
   nodeSelector: all()
   vxlanMode: Never
 ---

@@ -1,20 +1,26 @@
-apiVersion: projectcalico.org/v3
-kind: EarlyNetworkConfiguration
-spec:
- nodes:
-{%- for host in bgp_parameters %}
- - interfaceAddresses:
-{%- for ip in host.interfaces %}
-     - {{ ip.IP }}
-{%- endfor %}
-   stableAddress:
-     address: {{ host.stableAddress }}
-   asNumber: {{ host.asn }}
-   peerings:
-{%- for asn in host.interfaces %}
-     - peerIP: {{ asn.peerIP }}
-     - peerASN: {{ asn.peerASN }}
-{%- endfor %}
-   labels:
-     rack: {{ host.rack }}
-{%- endfor %}
+apiVersion: v1        
+kind: ConfigMap               
+metadata:              
+  name: bgp-layout
+data:
+   earlyNetworkConfiguration: |
+     apiVersion: projectcalico.org/v3
+     kind: EarlyNetworkConfiguration
+     spec:
+      nodes:
+     {%- for host in bgp_parameters %}
+      - interfaceAddresses:
+     {%- for ip in host.interfaces %}
+          - {{ ip.IP }}
+     {%- endfor %}
+        stableAddress:
+          address: {{ host.stableAddress }}
+        asNumber: {{ host.asn }}
+        peerings:
+     {%- for asn in host.interfaces %}
+          - peerIP: {{ asn.peerIP }}
+          - peerASN: {{ asn.peerASN }}
+     {%- endfor %}
+        labels:
+          rack: {{ host.rack }}
+     {%- endfor %}
