@@ -9,7 +9,7 @@ import unittest.mock as mock
 import ops.testing
 import pytest
 from charm import TigeraCharm
-from ops.model import MaintenanceStatus, WaitingStatus
+from ops.model import BlockedStatus, MaintenanceStatus
 
 DEFAULT_SERVICE_CIDR = "10.152.183.0/24"
 
@@ -23,7 +23,7 @@ TEST_CONFIGURE_BGP_INPUT = """- hostname: test
   rack: r
   stableAddress: 10.10.10.10"""
 
-TEST_CONFIGURE_BGP_BGPLAYOUT_YAML = """apiVersion: projectcalico.org/v3
+TEST_CONFIGURE_BGP_BGPLAYOUT_YAML = """apiVersion: crd.projectcalico.org/v1
 kind: EarlyNetworkConfiguration
 spec:
  nodes:
@@ -97,7 +97,7 @@ def charm(harness):
 def test_launch_initial_hooks(charm):
     assert charm.stored.tigera_configured is False, "Unexpected Stored Default"
     assert charm.stored.pod_restart_needed is False, "Unexpected Stored Default"
-    assert charm.unit.status == WaitingStatus("Waiting for CNI relation")
+    assert charm.unit.status == BlockedStatus("BGP configuration is required.")
 
 
 @pytest.mark.skip_kubectl_mock
@@ -182,7 +182,7 @@ def test_configure_cni_relation(harness, charm):
     relation = harness.model.relations["cni"][0]
     assert relation.data[charm.unit] == {
         "cidr": "172.22.0.0/16",
-        "cni-conf-file": "01-tigera.conflist",
+        "cni-conf-file": "10-calico.conflist",
     }
 
 

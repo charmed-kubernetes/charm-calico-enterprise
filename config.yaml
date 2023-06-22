@@ -83,6 +83,24 @@ options:
     description: |
       MTU to be used by the containers interface. If encapsulation is set to VXLAN,
       MTU=configured value - 50; IPIP, MTU=configured value - 20
+  nic_autodetection_skip_interface:
+    default: False
+    type: boolean
+    description: |
+      Negates the logic of nic_autodetection_regex. E.g. skipInterface
+  nic_autodetection_regex:
+    default: ""
+    type: string
+    description: |
+      A pattern to configure as the Calico NIC detection method. For example enp.*.
+      Takes precident over CIDR.
+      For details on Autodetection see: https://docs.tigera.io/calico-enterprise/latest/networking/ipam/ip-autodetection#autodetection-methods
+  nic_autodetection_cidrs:
+    default: ""
+    type: string
+    description: |
+      Comma separated list of CIDRs to use for autodetection. Overriden by nic_autodetection_regex. 
+      For details on Autodetection see: https://docs.tigera.io/calico-enterprise/latest/networking/ipam/ip-autodetection#autodetection-methods
   bgp_parameters:
     default: ''
     type: string

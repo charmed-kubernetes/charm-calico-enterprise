@@ -15,12 +15,12 @@ https://discourse.charmhub.io/t/4208
 import ipaddress
 import logging
 import os
-import socket
+import pathlib
+import tempfile
 import time
 import traceback
 from base64 import b64decode
 from subprocess import check_output
-import tempfile
 
 import yaml
 from conctl import getContainerRuntimeCtl
@@ -77,9 +77,7 @@ class TigeraCharm(CharmBase):
         self.framework.observe(self.on.update_status, self.on_update_status)
         self.framework.observe(self.on.upgrade_charm, self.on_upgrade_charm)
         self.framework.observe(self.on.cni_relation_joined, self.on_cni_relation_joined)
-        self.framework.observe(
-            self.on.cni_relation_changed, self.on_cni_relation_changed
-        )
+        self.framework.observe(self.on.cni_relation_changed, self.on_cni_relation_changed)
         self.framework.observe(self.on.tigera_relation_changed, self.on_config_changed)
 
         self.stored.set_default(tigera_configured=False)
@@ -180,7 +178,6 @@ class TigeraCharm(CharmBase):
 
         Returns True if successful on all checks pass, False otherwise.
         """
-
         if not self.model.config["bgp_parameters"]:
             self.unit.status = BlockedStatus("BGP configuration is required.")
             return False
@@ -196,12 +193,10 @@ class TigeraCharm(CharmBase):
         try:
             ipaddress.ip_network(self.model.config["pod_cidr"])
         except ValueError:
-            self.unit.status = BlockedStatus(
-                "Pod-to-Pod configuration is not valid CIDR"
-            )
+            self.unit.status = BlockedStatus("Pod-to-Pod configuration is not valid CIDR")
             return False
         try:
-            stable_ip_cidr = ipaddress.ip_network(self.model.config["stable_ip_cidr"])
+            ipaddress.ip_network(self.model.config["stable_ip_cidr"])
         except ValueError:
             self.unit.status = BlockedStatus("Stable IP network is not valid CIDR")
             return False
@@ -230,9 +225,7 @@ class TigeraCharm(CharmBase):
     def kubernetes_version(self):
         """Returns the k8s version."""
         return ".".join(
-            self.kubectl("version", "--short")
-            .split("Server Version: v")[1]
-            .split(".")[:2]
+            self.kubectl("version", "--short").split("Server Version: v")[1].split(".")[:2]
         )
 
     def apply_tigera_operator(self):
@@ -240,18 +233,18 @@ class TigeraCharm(CharmBase):
 
         Raises: TigeraCalicoError if tigera distro version is not found
         """
-        version = TIGERA_DISTRO_VERSIONS.get(self.kubernetes_version)
+        version = TIGERA_DISTRO_VERSIONS.get(self.kubernetes_versdireion)
         if not version:
             raise TigeraCalicoError(0, "K8s and tigera version mismatch")
-        url = (
-            f"https://downloads.tigera.io/ee/v{version}/manifests/tigera-operator.yaml"
-        )
+        if not pathlib.Path(KUBECONFIG_PATH).exists():
+            self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
+            return False
+        url = f"https://downloads.tigera.io/ee/v{version}/manifests/tigera-operator.yaml"
         try:
             self.kubectl("create", "-f", url)
         except:
-            # TODO: It will always fail
-            # self.unit.status = BlockedStatus("Failed to apply the tigera operator")
-            return True
+            self.unit.status = BlockedStatus("Failed to apply the tigera operator")
+            return False
 
     def check_tigera_operator_deployment_status(self):
         """Check if  tigera operator is ready.
@@ -342,7 +335,8 @@ class TigeraCharm(CharmBase):
             "/tmp/bgp_layout.yaml",
             bgp_parameters=self.bgp_parameters,
         )
-        self.kubectl("apply", "-n", "tigera-operator", "-f", "/tmp/bgp_layout.yaml")
+        # self.kubectl("apply", "-n", "tigera-operator", "-f", "/tmp/bgp_layout.yaml")
+        self.kubectl("apply", "-n", "calico-system", "-f", "/tmp/bgp_layout.yaml")
 
         return True
 
@@ -362,7 +356,6 @@ class TigeraCharm(CharmBase):
 
     def configure_bgp(self):
         """Configure BGP according to the charm options."""
-
         self.render_template(
             "bgppeer.yaml.j2",
             "/tmp/bgppeer.yaml",
@@ -408,12 +401,18 @@ class TigeraCharm(CharmBase):
             return
 
     def on_cni_relation_changed(self, event):
+        if not self.stored.tigera_configured:
+            self.on_config_changed(event)
+
         self.cni_to_tigera(event)
         self.configure_cni_relation()
         self.set_active_status()
 
     def on_cni_relation_joined(self, event):
         """Run CNI relation joined hook."""
+        if not self.stored.tigera_configured:
+            self.on_config_changed(event)
+
         self.cni_to_tigera(event)
         self.configure_cni_relation()
         self.set_active_status()
@@ -451,7 +450,6 @@ class TigeraCharm(CharmBase):
             return
         service_cidr = self.tigera_peer_data("service-cidr")
 
-        # TODO: This prevents CIDR change
         if self.waiting_for_cni_relation():
             self.unit.status = WaitingStatus("Waiting for CNI relation")
             return
@@ -460,16 +458,8 @@ class TigeraCharm(CharmBase):
         if not self.apply_tigera_operator():
             return
 
-        if not self.patch_tigera_install():
-            return
-
-        self.unit.status = MaintenanceStatus(
-            "Configuring image secret and license file..."
-        )
-        if (
-            self.model.config["image_registry"]
-            and self.model.config["image_registry_secret"]
-        ):
+        self.unit.status = MaintenanceStatus("Configuring image secret and license file...")
+        if self.model.config["image_registry"] and self.model.config["image_registry_secret"]:
             try:
                 self.kubectl(
                     "delete",
@@ -500,6 +490,23 @@ class TigeraCharm(CharmBase):
         self.configure_bgp()
 
         self.unit.status = MaintenanceStatus("Applying Installation CRD")
+
+        nic_autodetection = None
+        if self.model.config["nic_autodetection_regex"]:
+            if self.model.config["nic_autodetection_skip_interface"]:
+                nic_autodetection = (
+                    f"skipIterface: ${self.model.config['nic_autodetection_regex']}"
+                )
+            else:
+                nic_autodetection = f"interface: {self.model.config['nic_autodetection_regex']}"
+        elif self.model.config["nic_autodetection_cidrs"]:
+            nic_autodetection = f"cidrs: {self.model.config['nic_autodetection_cidrs'].split(',')}"
+        else:
+            self.model.status = BlockedStatus(
+                "NIC Autodetection settings are required. (nic_autodetection_* settings.)"
+            )
+            return
+
         self.render_template(
             "calico_enterprise_install.yaml.j2",
             "/tmp/calico_enterprise_install.yaml",
@@ -507,6 +514,8 @@ class TigeraCharm(CharmBase):
             image_registry_secret=self.model.config["image_registry_secret"],
             image_path=self.model.config["image_path"],
             image_prefix=self.model.config["image_prefix"],
+            nic_regex=self.model.config["nic_regex"],
+            nic_autodetection=nic_autodetection,
         )
         self.render_template(
             "bgpconfiguration.yaml.j2",
@@ -526,9 +535,7 @@ class TigeraCharm(CharmBase):
             self.kubectl("apply", "-f", "-", "/tmp/addons.yaml")
 
         for i in range(0, 10):
-            self.unit.status = MaintenanceStatus(
-                f"Wait #{i} for the tigera operator..."
-            )
+            self.unit.status = MaintenanceStatus(f"Wait #{i} for the tigera operator...")
             if self.check_tigera_status():
                 break
             time.sleep(24)

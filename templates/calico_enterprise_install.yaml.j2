@@ -20,3 +20,7 @@ spec:
   imagePrefix:  {{ image_prefix }}
   {%- endif %}
   {%- endif %}
+  calicoNetwork:
+    nodeAddressAutodetectionV4:
+      {{ nic_autodetection }}
+      
