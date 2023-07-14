@@ -9,6 +9,11 @@ options:
     type: string
     description: |
       Pod to Pod network CIDR used by each pod
+  pod_cidr_block_size:
+    default: "26"
+    type: string
+    description: |
+      The CIDR size to split between nodes
   license:
     default: ""
     type: string

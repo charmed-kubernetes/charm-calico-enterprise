@@ -233,16 +233,19 @@ class TigeraCharm(CharmBase):
 
         Raises: TigeraCalicoError if tigera distro version is not found
         """
-        version = TIGERA_DISTRO_VERSIONS.get(self.kubernetes_versdireion)
+        version = TIGERA_DISTRO_VERSIONS.get(self.kubernetes_version)
         if not version:
             raise TigeraCalicoError(0, "K8s and tigera version mismatch")
         if not pathlib.Path(KUBECONFIG_PATH).exists():
             self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
             return False
-        url = f"https://downloads.tigera.io/ee/v{version}/manifests/tigera-operator.yaml"
+        operator_url = f"https://downloads.tigera.io/ee/v{version}/manifests/tigera-operator.yaml"
+        crd_url = f"https://downloads.tigera.io/ee/v{version}/manifests/custom-resources.yaml"
         try:
-            self.kubectl("create", "-f", url)
+            self.kubectl("create", "-f", operator_url)
+            self.kubectl("create", "-f", crd_url)
         except:
+            # TODO fails if tigera already deployed and blocks.
             self.unit.status = BlockedStatus("Failed to apply the tigera operator")
             return False
 
@@ -321,6 +324,9 @@ class TigeraCharm(CharmBase):
         return not self.is_kubeconfig_available() or not service_cidr or not registry
 
     def pre_tigera_init_config(self):
+        if not pathlib.Path(KUBECONFIG_PATH).exists():
+            self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
+            return False
         bgp_parameters = self.model.config["bgp_parameters"]
         try:
             self.kubectl("create", "ns", "tigera-operator")
@@ -365,7 +371,7 @@ class TigeraCharm(CharmBase):
         self.render_template(
             "ippools.yaml.j2",
             "/tmp/ippools.yaml",
-            pod_cidr_range=self.get_ip_range(self.model.config["pod_cidr"]),
+            pod_cidr_range=self.model.config["pod_cidr_block_size"],
             pod_cidr=self.model.config["pod_cidr"],
             stable_ip_cidr=self.model.config["stable_ip_cidr"],
         )
@@ -436,6 +442,8 @@ class TigeraCharm(CharmBase):
         """
         self.stored.tigera_configured = False
         if not self.preflight_checks():
+            # TOOD: Enters a defer loop
+            # event.defer()
             return
         if not self.unit.is_leader():
             # Only the leader should manage the operator setup
@@ -447,6 +455,8 @@ class TigeraCharm(CharmBase):
             return
 
         if not self.pre_tigera_init_config():
+            # TOOD: Enters a defer loop
+            # event.defer()
             return
         service_cidr = self.tigera_peer_data("service-cidr")
 
@@ -456,6 +466,8 @@ class TigeraCharm(CharmBase):
 
         self.unit.status = MaintenanceStatus("Applying Tigera Operator")
         if not self.apply_tigera_operator():
+            # TOOD: Enters a defer loop
+            # event.defer()
             return
 
         self.unit.status = MaintenanceStatus("Configuring image secret and license file...")
@@ -502,7 +514,7 @@ class TigeraCharm(CharmBase):
         elif self.model.config["nic_autodetection_cidrs"]:
             nic_autodetection = f"cidrs: {self.model.config['nic_autodetection_cidrs'].split(',')}"
         else:
-            self.model.status = BlockedStatus(
+            self.unit.status = BlockedStatus(
                 "NIC Autodetection settings are required. (nic_autodetection_* settings.)"
             )
             return
@@ -514,7 +526,6 @@ class TigeraCharm(CharmBase):
             image_registry_secret=self.model.config["image_registry_secret"],
             image_path=self.model.config["image_path"],
             image_prefix=self.model.config["image_prefix"],
-            nic_regex=self.model.config["nic_regex"],
             nic_autodetection=nic_autodetection,
         )
         self.render_template(
