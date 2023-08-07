@@ -28,7 +28,7 @@ from jinja2 import Environment, FileSystemLoader
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus, ModelError
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -233,17 +233,17 @@ class TigeraCharm(CharmBase):
 
         Raises: TigeraCalicoError if tigera distro version is not found
         """
-        version = TIGERA_DISTRO_VERSIONS.get(self.kubernetes_version)
-        if not version:
-            raise TigeraCalicoError(0, "K8s and tigera version mismatch")
         if not pathlib.Path(KUBECONFIG_PATH).exists():
             self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
             return False
-        operator_url = f"https://downloads.tigera.io/ee/v{version}/manifests/tigera-operator.yaml"
-        crd_url = f"https://downloads.tigera.io/ee/v{version}/manifests/custom-resources.yaml"
         try:
-            self.kubectl("create", "-f", operator_url)
-            self.kubectl("create", "-f", crd_url)
+            installation_manifest = self.model.resources.fetch("calico-enterprise-manifest")
+            crds_manifest = self.model.resources.fetch("calico-crd-manifest")
+        except ModelError as e:
+            self.unit.status = BlockedStatus("Could not get tigera manifest resources. Check juju debug-log.")
+        try:
+            self.kubectl("create", "-f", installation_manifest)
+            self.kubectl("create", "-f", crds_manifest)
         except:
             # TODO fails if tigera already deployed and blocks.
             self.unit.status = BlockedStatus("Failed to apply the tigera operator")

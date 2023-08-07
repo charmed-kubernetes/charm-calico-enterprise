@@ -15,6 +15,14 @@ resources:
     type: file
     filename: cnx-node-image.tar.gz
     description: 'cnx-node resource tarball for amd64'
+  calico-enterprise-manifest:
+    type: file
+    filename: tigera-installation.yaml
+    description: 'The Tigera manifest'
+  calico-crd-manifest:
+    type: file
+    filename: tigera-crds.yaml
+    description: 'The Tigera CRDs manifest'
 
 requires:
   cni:
