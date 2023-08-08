@@ -79,6 +79,8 @@ class TigeraCharm(CharmBase):
         self.framework.observe(self.on.cni_relation_joined, self.on_cni_relation_joined)
         self.framework.observe(self.on.cni_relation_changed, self.on_cni_relation_changed)
         self.framework.observe(self.on.tigera_relation_changed, self.on_config_changed)
+        self.framework.observe(self.on.start, self.on_config_changed)
+        self.framework.observe(self.on.upgrade_charm, self.on_config_changed)
 
         self.stored.set_default(tigera_configured=False)
         self.stored.set_default(pod_restart_needed=False)
@@ -241,13 +243,14 @@ class TigeraCharm(CharmBase):
             crds_manifest = self.model.resources.fetch("calico-crd-manifest")
         except ModelError as e:
             self.unit.status = BlockedStatus("Could not get tigera manifest resources. Check juju debug-log.")
+            return False
         try:
             self.kubectl("create", "-f", installation_manifest)
             self.kubectl("create", "-f", crds_manifest)
         except:
-            # TODO fails if tigera already deployed and blocks.
-            self.unit.status = BlockedStatus("Failed to apply the tigera operator")
-            return False
+            # TODO implement a check which checks for tigera resources
+            logger.warn("Kubectl create failed - tigera operator my not be deployed.")
+            return True
 
     def check_tigera_operator_deployment_status(self):
         """Check if  tigera operator is ready.
@@ -334,8 +337,16 @@ class TigeraCharm(CharmBase):
         except:
             pass
         if not bgp_parameters:
-            self.unit.status = BlockedStatus("bgp_parameters are required.")
+            self.unit.status = BlockedStatus("bgp_parameters is required.")
             return False
+        
+        for node in yaml.safe_load(bgp_parameters):
+            try:
+                self.kubectl("label", "node", node['hostname'], f"rack={node['rack']}")
+            except:
+                logger.warn(f"Node labelling failed. Does {node['hostname']} exist?")
+                pass
+
         self.render_template(
             "bgp_layout.yaml.j2",
             "/tmp/bgp_layout.yaml",
