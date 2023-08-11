@@ -140,6 +140,7 @@ class TigeraCharm(CharmBase):
         for relation in self.model.relations["cni"]:
             relation.data[self.unit]["cidr"] = cidr
             relation.data[self.unit]["cni-conf-file"] = "10-calico.conflist"
+        self.stored.tigera_cni_configured = True
 
     def render_template(self, template_file, destination, **kwargs):
         """Render template_file to destination using kwargs."""
@@ -352,8 +353,8 @@ class TigeraCharm(CharmBase):
             "/tmp/bgp_layout.yaml",
             bgp_parameters=self.bgp_parameters,
         )
-        # self.kubectl("apply", "-n", "tigera-operator", "-f", "/tmp/bgp_layout.yaml")
-        self.kubectl("apply", "-n", "calico-system", "-f", "/tmp/bgp_layout.yaml")
+        self.kubectl("apply", "-n", "tigera-operator", "-f", "/tmp/bgp_layout.yaml")
+        # self.kubectl("apply", "-n", "calico-system", "-f", "/tmp/bgp_layout.yaml")
 
         return True
 
