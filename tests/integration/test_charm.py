@@ -40,22 +40,14 @@ async def test_build_and_deploy(ops_test: OpsTest):
     log.info("Build charm...")
     charm = await ops_test.build_charm(".")
 
-    # Juju 3.x CLI doesn't have read access to
-    # /opt/github-runner/_work/charm-kube-ovn/charm-kube-ovn/plugins/kubectl-ko
-    # on GH runners. Copy it into ops_test.tmp_path which should be readable
-    plugin_src = Path.cwd() / "plugins/kubectl-ko"
-    plugin_path = ops_test.tmp_path / "kubectl-ko"
-    shutil.copy(str(plugin_src), str(plugin_path))
-
     overlays = [
         ops_test.Bundle("kubernetes-core", channel="edge"),
         Path("tests/data/charm.yaml"),
-        # Path("tests/data/vsphere-overlay.yaml"),
     ]
 
     log.info("Rendering overlays...")
     bundle, *overlays = await ops_test.async_render_bundles(
-        *overlays, charm=charm, plugin=plugin_path
+        *overlays, charm=charm
     )
 
     log.info("Deploy charm...")
