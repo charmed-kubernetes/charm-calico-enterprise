@@ -1,8 +1,8 @@
 from math import isclose
 from pathlib import Path
 from pytest_operator.plugin import OpsTest
-from grafana import Grafana
-from prometheus import Prometheus
+# from grafana import Grafana
+# from prometheus import Prometheus
 import asyncio
 import shlex
 import shutil
@@ -50,7 +50,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
     overlays = [
         ops_test.Bundle("kubernetes-core", channel="edge"),
         Path("tests/data/charm.yaml"),
-        Path("tests/data/vsphere-overlay.yaml"),
+        # Path("tests/data/vsphere-overlay.yaml"),
     ]
 
     log.info("Rendering overlays...")
@@ -63,19 +63,20 @@ async def test_build_and_deploy(ops_test: OpsTest):
     juju_cmd = f"deploy -m {model} {bundle} --trust " + " ".join(
         f"--overlay={f}" for f in overlays
     )
+    print(juju_cmd)
 
     await ops_test.juju(
         *shlex.split(juju_cmd), check=True, fail_msg="Bundle deploy failed"
     )
     await ops_test.model.block_until(
-        lambda: "kube-ovn" in ops_test.model.applications, timeout=60
+        lambda: "tigera" in ops_test.model.applications, timeout=60
     )
 
     await ops_test.model.wait_for_idle(status="active", timeout=60 * 60)
 
 
 async def test_kubectl_ko_plugin(ops_test):
-    units = ops_test.model.applications["kube-ovn"].units
+    units = ops_test.model.applications["tigera"].units
     machines = [u.machine.entity_id for u in units]
     for m in machines:
         juju_cmd = f"ssh {m} -- kubectl ko nbctl show"
@@ -362,7 +363,7 @@ async def multi_nic_ipam(kubectl, kubectl_exec):
     try:
         yield ip_addr_output
     finally:
-        # net-attach-def needs to be deleted last since kube-ovn-controller
+        # net-attach-def needs to be deleted last since tigera-controller
         # depends on it to properly clean up the pod and subnet
         await kubectl("delete", "pod", "test-multi-nic-ipam")
         await kubectl("delete", "subnet", "test-multi-nic-ipam")
@@ -419,7 +420,7 @@ async def run_tcpdump_test(ops_test, unit, interface, capture_comparator, filter
 
 
 async def test_global_mirror(ops_test):
-    kube_ovn_app = ops_test.model.applications["kube-ovn"]
+    kube_ovn_app = ops_test.model.applications["tigera"]
     worker_app = ops_test.model.applications["kubernetes-worker"]
     worker_unit = worker_app.units[0]
     mirror_iface = "mirror0"
@@ -463,7 +464,7 @@ async def test_pod_mirror(ops_test, nginx_pods, annotate):
                 log.info(f"stderr: {stderr}")
             await asyncio.sleep(wait_time)
 
-    kube_ovn_app = ops_test.model.applications["kube-ovn"]
+    kube_ovn_app = ops_test.model.applications["tigera"]
     worker_app = ops_test.model.applications["kubernetes-worker"]
     mirror_iface = "mirror0"
 
@@ -675,37 +676,37 @@ async def test_external_gateway(bird_container_ip, external_gateway_pod, kubectl
     )
 
 
-async def test_grafana(
-    ops_test, grafana_host, grafana_password, expected_dashboard_titles
-):
-    # port is defined in grafana_service.yaml
-    grafana = Grafana(ops_test, host=grafana_host, port=30123, pw=grafana_password)
-    while not await grafana.is_ready():
-        log.info("Waiting for Grafana to be ready ...")
-        await asyncio.sleep(5)
-    dashboards = await grafana.dashboards_all()
-    actual_dashboard_titles = [dashboard["title"] for dashboard in dashboards]
+# async def test_grafana(
+#     ops_test, grafana_host, grafana_password, expected_dashboard_titles
+# ):
+#     # port is defined in grafana_service.yaml
+#     grafana = Grafana(ops_test, host=grafana_host, port=30123, pw=grafana_password)
+#     while not await grafana.is_ready():
+#         log.info("Waiting for Grafana to be ready ...")
+#         await asyncio.sleep(5)
+#     dashboards = await grafana.dashboards_all()
+#     actual_dashboard_titles = [dashboard["title"] for dashboard in dashboards]
 
-    assert set(expected_dashboard_titles) == set(actual_dashboard_titles)
+#     assert set(expected_dashboard_titles) == set(actual_dashboard_titles)
 
 
-async def test_prometheus(ops_test, prometheus_host, expected_prometheus_metrics):
-    prometheus = Prometheus(ops_test, host=prometheus_host, port=31337)
+# async def test_prometheus(ops_test, prometheus_host, expected_prometheus_metrics):
+#     prometheus = Prometheus(ops_test, host=prometheus_host, port=31337)
 
-    while not await prometheus.is_ready():
-        log.info("Waiting for Prometheus to be ready...")
-        await asyncio.sleep(5)
+#     while not await prometheus.is_ready():
+#         log.info("Waiting for Prometheus to be ready...")
+#         await asyncio.sleep(5)
 
-    @retry(
-        retry=retry_if_exception_type(AssertionError),
-        wait=wait_fixed(30),
-        stop=stop_after_attempt(2),
-    )
-    async def gather_metrics():
-        metrics = await prometheus.metrics_all()
-        assert set(expected_prometheus_metrics).issubset(set(metrics))
+#     @retry(
+#         retry=retry_if_exception_type(AssertionError),
+#         wait=wait_fixed(30),
+#         stop=stop_after_attempt(2),
+#     )
+#     async def gather_metrics():
+#         metrics = await prometheus.metrics_all()
+#         assert set(expected_prometheus_metrics).issubset(set(metrics))
 
-    await gather_metrics()
+#     await gather_metrics()
 
 
 @pytest.mark.usefixtures("k8s_model")

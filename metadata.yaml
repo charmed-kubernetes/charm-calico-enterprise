@@ -9,7 +9,6 @@ subordinate: true
 series:
   - jammy
   - focal
-
 resources:
   cnx-node-image:
     type: file
