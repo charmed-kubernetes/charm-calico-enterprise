@@ -1,7 +1,8 @@
 type: charm
 parts:
   charm:
-    charm-python-packages: [setuptools]
+    build-packages: [git]
+    charm-python-packages: [setuptools, pip]
 bases:
   - build-on:
     - name: "ubuntu"
