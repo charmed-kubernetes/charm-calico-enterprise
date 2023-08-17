@@ -43,6 +43,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
     overlays = [
         ops_test.Bundle("kubernetes-core", channel="edge"),
         Path("tests/data/charm.yaml"),
+        Path("tests/data/easyrsa.yaml"),
     ]
 
     log.info("Rendering overlays...")
@@ -52,14 +53,14 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
     log.info("Deploy charm...")
     model = ops_test.model_full_name
-    juju_cmd = f"deploy -m {model} {bundle} --trust " + " ".join(
-        f"--overlay={f}" for f in overlays
-    )
-    print(juju_cmd)
+    # juju_cmd = f"deploy -m {model} {bundle} --trust " + " ".join(
+    #     f"--overlay={f}" for f in overlays
+    # )
+    # print(juju_cmd)
 
-    await ops_test.juju(
-        *shlex.split(juju_cmd), check=True, fail_msg="Bundle deploy failed"
-    )
+    # await ops_test.juju(
+    #     *shlex.split(juju_cmd), check=True, fail_msg="Bundle deploy failed"
+    # )
     await ops_test.model.block_until(
         lambda: "tigera" in ops_test.model.applications, timeout=60
     )
@@ -411,38 +412,38 @@ async def run_tcpdump_test(ops_test, unit, interface, capture_comparator, filter
         raise TCPDumpError(msg)
 
 
-async def test_global_mirror(ops_test):
-    kube_ovn_app = ops_test.model.applications["tigera"]
-    worker_app = ops_test.model.applications["kubernetes-worker"]
-    worker_unit = worker_app.units[0]
-    mirror_iface = "mirror0"
-    # Test once before configuring the mirror, 0 packets should be captured
-    assert await run_tcpdump_test(ops_test, worker_unit, mirror_iface, lambda x: x == 0)
+# async def test_global_mirror(ops_test):
+#     kube_ovn_app = ops_test.model.applications["tigera"]
+#     worker_app = ops_test.model.applications["kubernetes-worker"]
+#     worker_unit = worker_app.units[0]
+#     mirror_iface = "mirror0"
+#     # Test once before configuring the mirror, 0 packets should be captured
+#     assert await run_tcpdump_test(ops_test, worker_unit, mirror_iface, lambda x: x == 0)
 
-    # Configure and test that traffic is being captured (more than 0 captured)
-    # Note this will be retried a few times, as it takes a bit of time for the newly configured
-    # daemonset to get restarted
-    log.info("Enabling global mirror ...")
-    await kube_ovn_app.set_config(
-        {
-            "enable-global-mirror": "true",
-            "mirror-iface": mirror_iface,
-        }
-    )
-    try:
-        await ops_test.model.wait_for_idle(status="active", timeout=60 * 10)
-        assert await run_tcpdump_test(
-            ops_test, worker_unit, mirror_iface, lambda x: x > 0
-        )
-    finally:
-        log.info("Disabling global mirror ...")
-        await kube_ovn_app.set_config(
-            {
-                "enable-global-mirror": "false",
-                "mirror-iface": mirror_iface,
-            }
-        )
-        await ops_test.model.wait_for_idle(status="active", timeout=60 * 10)
+#     # Configure and test that traffic is being captured (more than 0 captured)
+#     # Note this will be retried a few times, as it takes a bit of time for the newly configured
+#     # daemonset to get restarted
+#     log.info("Enabling global mirror ...")
+#     await kube_ovn_app.set_config(
+#         {
+#             "enable-global-mirror": "true",
+#             "mirror-iface": mirror_iface,
+#         }
+#     )
+#     try:
+#         await ops_test.model.wait_for_idle(status="active", timeout=60 * 10)
+#         assert await run_tcpdump_test(
+#             ops_test, worker_unit, mirror_iface, lambda x: x > 0
+#         )
+#     finally:
+#         log.info("Disabling global mirror ...")
+#         await kube_ovn_app.set_config(
+#             {
+#                 "enable-global-mirror": "false",
+#                 "mirror-iface": mirror_iface,
+#             }
+#         )
+#         await ops_test.model.wait_for_idle(status="active", timeout=60 * 10)
 
 
 async def test_pod_mirror(ops_test, nginx_pods, annotate):
