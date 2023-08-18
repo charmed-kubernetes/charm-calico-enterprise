@@ -28,7 +28,7 @@ from jinja2 import Environment, FileSystemLoader
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus, ModelError
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, ModelError, WaitingStatus
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -242,8 +242,10 @@ class TigeraCharm(CharmBase):
         try:
             installation_manifest = self.model.resources.fetch("calico-enterprise-manifest")
             crds_manifest = self.model.resources.fetch("calico-crd-manifest")
-        except ModelError as e:
-            self.unit.status = BlockedStatus("Could not get tigera manifest resources. Check juju debug-log.")
+        except ModelError:
+            self.unit.status = BlockedStatus(
+                "Could not get tigera manifest resources. Check juju debug-log."
+            )
             return False
         try:
             self.kubectl("create", "-f", installation_manifest)
@@ -340,10 +342,10 @@ class TigeraCharm(CharmBase):
         if not bgp_parameters:
             self.unit.status = BlockedStatus("bgp_parameters is required.")
             return False
-        
+
         for node in yaml.safe_load(bgp_parameters):
             try:
-                self.kubectl("label", "node", node['hostname'], f"rack={node['rack']}")
+                self.kubectl("label", "node", node["hostname"], f"rack={node['rack']}")
             except:
                 logger.warn(f"Node labelling failed. Does {node['hostname']} exist?")
                 pass
