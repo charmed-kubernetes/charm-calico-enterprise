@@ -29,33 +29,31 @@ PING_LOSS_RE = re.compile(r"(?:([\d\.]+)% packet loss)")
 
 @pytest.mark.abort_on_fail
 @pytest.mark.skip_if_deployed
-async def test_build_and_deploy(ops_test: OpsTest):
+async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_ee_license):
     log.info("Build charm...")
     # TODO: Undo this
-    # charm = await ops_test.build_charm(".")
+    charm = await ops_test.build_charm(".")
 
-    [
-        ops_test.Bundle("kubernetes-core", channel="edge"),
+    overlays = [
         Path("tests/data/charm.yaml"),
-        Path("tests/data/easyrsa.yaml"),
     ]
 
     log.info("Rendering overlays...")
     # TODO: Undo this
-    # bundle, *overlays = await ops_test.async_render_bundles(
-    #     *overlays, charm=charm
-    # )
+    bundle, *overlays = await ops_test.async_render_bundles(
+        *overlays, charm=charm, tigera_reg_secret=tigera_ee_reg_secret, tigera_ee_license=tigera_ee_license
+    )
 
     log.info("Deploy charm...")
     # TODO: Undo this
-    # juju_cmd = f"deploy -m {model} {bundle} --trust " + " ".join(
-    #     f"--overlay={f}" for f in overlays
-    # )
-    # print(juju_cmd)
+    juju_cmd = f"deploy --map-machines=existing -m {ops_test.model_full_name} {bundle} --trust " + " ".join(
+        f"--overlay={f}" for f in overlays
+    )
+    print(juju_cmd)
 
-    # await ops_test.juju(
-    #     *shlex.split(juju_cmd), check=True, fail_msg="Bundle deploy failed"
-    # )
+    await ops_test.juju(
+        *shlex.split(juju_cmd), check=True, fail_msg="Bundle deploy failed"
+    )
     await ops_test.model.block_until(lambda: "tigera" in ops_test.model.applications, timeout=60)
 
     await ops_test.model.wait_for_idle(status="active", timeout=60 * 60)

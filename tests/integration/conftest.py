@@ -58,11 +58,6 @@ async def client(kubeconfig):
 
 
 @pytest.fixture(scope="module")
-def subnet_resource(client):
-    return create_global_resource("kubeovn.io", "v1", "Subnet", "subnets")
-
-
-@pytest.fixture(scope="module")
 def worker_node(client):
     # Returns a worker node
     for node in client.list(Node):
@@ -142,35 +137,6 @@ async def wait_pod_ips(client, pods):
     return ready
 
 
-@pytest.fixture()
-async def isolated_subnet(client, subnet_resource):
-    log.info("Creating isolated subnet resources ...")
-    path = Path("tests/data/isolated-subnet.yaml")
-    for obj in codecs.load_all_yaml(path.read_text()):
-        client.create(obj)
-    subnets = [
-        client.get(subnet_resource, name="isolated-subnet"),
-        client.get(subnet_resource, name="allowed-subnet"),
-    ]
-    log.info("Waiting for subnets...")
-    for sn in subnets:
-        client.wait(subnet_resource, sn.metadata.name, for_conditions=["Ready"])
-
-    watch = [
-        client.get(Pod, name="isolated-pod", namespace="isolated"),
-        client.get(Pod, name="allowed-pod", namespace="allowed"),
-    ]
-
-    pods = await wait_pod_ips(client, watch)
-
-    yield tuple(pods)
-
-    log.info("Deleting isolated subnet resources ...")
-    for obj in codecs.load_all_yaml(path.read_text()):
-        client.delete(type(obj), obj.metadata.name, namespace=obj.metadata.namespace)
-
-    await wait_for_removal(client, pods)
-
 
 async def wait_for_removal(client, pods):
     """Waits until listed pods are no longer present in the cluster."""
@@ -245,6 +211,31 @@ def kubectl(ops_test, kubeconfig):
 
     return f
 
+@pytest.fixture(scope="module")
+def tigera_ee_license():
+    """Fetches the Tigera EE license from the environement"""
+    KubeCtl = Union[str, Tuple[int, str, str]]
+
+    if 'CHARM_TIGERA_EE_LICNESE' not in os.environ:
+        raise KeyError("Tigera License not found")
+    tg_ee_license = None
+    with open(os.environ['CHARM_TIGERA_EE_LICNESE'], 'r') as fh:
+        tg_ee_license = fh.read()
+
+    return tg_ee_license
+
+@pytest.fixture(scope="module")
+def tigera_ee_reg_secret():
+    """Fetches the Tigera EE registry secret"""
+    KubeCtl = Union[str, Tuple[int, str, str]]
+
+    if 'CHARM_TIGERA_EE_REG_SECRET' not in os.environ:
+        raise KeyError("Tigera License not found")
+    tg_reg_secret = None
+    with open(os.environ['CHARM_TIGERA_EE_REG_SECRET'], 'r') as fh:
+        tg_reg_secret = fh.read()
+
+    return tg_reg_secret
 
 @pytest.fixture(scope="module")
 def kubectl_exec(kubectl):
