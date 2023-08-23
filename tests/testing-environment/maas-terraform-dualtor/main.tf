@@ -9,28 +9,15 @@ terraform {
 
 provider "maas" {
   api_version = "2.0"
-  api_key = "eWnngzCTvZxzx3GqLC:KSHQfTFNuKvdm39Xx3:t8PsQ7QDy4Tw7S2gX39e2f7eH3VDcLLc"
-  api_url = "http://10.10.32.2:5240/MAAS"
+  api_key = var.maas_api_key
+  api_url = var.maas_api_url
 }
 
-# resource "maas_space" "tf_space" {
-#   name = "tf-space"
-# }
-
-# resource "maas_fabric" "tf_fabric" {
-#   name = "tf-fabric"
-# }
-# resource "maas_tag" "tigera" {
-#   name = "tigera"
-# }
 resource "maas_instance" "juju_mnl" {
   count = 1
   allocate_params {
-    # hostname = "k8s-node-${count.index}"
     pool = "default"
     zone = "default"
-    # min_cpu_count = 2
-    # min_memory = 4096
     tags = [
       "juju-manual",
     ]
@@ -51,8 +38,6 @@ resource "maas_instance" "k8s_nodes" {
     hostname = "k8s-hm-${count.index}"
     pool = "default"
     zone = "default"
-    # min_cpu_count = 2
-    # min_memory = 4096
     tags = [
       "tigera-hm",
     ]
