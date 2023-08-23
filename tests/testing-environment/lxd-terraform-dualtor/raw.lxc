@@ -1,0 +1,4 @@
+lxc.apparmor.profile=unconfined
+lxc.mount.auto=proc:rw sys:rw cgroup:rw
+lxc.cgroup.devices.allow=a
+lxc.cap.drop=
