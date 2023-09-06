@@ -4,7 +4,7 @@ package_upgrade: true
 users:
   - name: ubuntu
     ssh_import_id:
-    - lp:USER_ID
+    - lp:pjds
     groups: [adm, audio, cdrom, dialout, floppy, video, plugdev, dip, netdev]
     plain_text_passwd: "ubuntu"
     shell: /bin/bash
@@ -21,6 +21,15 @@ write_files:
     sudo systemctl enable --now calico-early-wait
   path: /tmp/setup-env.sh
   permissions: "0744"
+  owner: root:root
+- content: |
+    PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+    HTTP_PROXY="http://squid.internal:3128"
+    HTTPS_PROXY="http://squid.internal:3128"
+    http_proxy="http://squid.internal:3128"
+    https_proxy="http://squid.internal:3128"
+  path: /etc/environment
+  permissions: "0644"
   owner: root:root
 - content: |
     [Unit]
