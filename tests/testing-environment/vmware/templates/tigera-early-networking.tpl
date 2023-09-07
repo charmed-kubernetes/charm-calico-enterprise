@@ -85,15 +85,15 @@ write_files:
     spec:
       nodes: %{ for offset in nodes }
       - interfaceAddresses:
-          - ${switch_network_sw1}.${12+offset}
-          - ${switch_network_sw2}.${12+offset}
+          - ${switch_network_sw1}.${100+offset}
+          - ${switch_network_sw2}.${100+offset}
         stableAddress:
-          address: 10.30.30.${12+offset}
+          address: 10.30.30.${100+offset}
         asNumber: ${65000+offset}
         peerings:
-          - peerIP: ${switch_network_sw1}.${tor_sw1_octet}
+          - peerIP: 10.246.153.202
             peerASNumber: ${tor_sw1_asn}
-          - peerIP: ${switch_network_sw2}.${tor_sw2_octet}
+          - peerIP: 10.246.154.202
             peerASNumber: ${tor_sw2_asn}
         labels:
           rack: rack1 %{~ endfor }
