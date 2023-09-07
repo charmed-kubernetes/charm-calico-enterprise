@@ -51,17 +51,19 @@ data "cloudinit_config" "calico_early" {
   part {
     filename     = "cloud-config.yaml"
     content_type = "text/cloud-config"
-
     content = templatefile("${path.module}/templates/tigera-early-networking.tpl", {
-      tor_sw1_asn        = 65021,
-      tor_sw2_asn        = 65031,
-      tor_sw1_octet      = "3",
-      tor_sw2_octet      = "3",
-      switch_network_sw1 = "10.246.154",
-      switch_network_sw2 = "10.246.155",
-      mgmt_network       = "10.246.153",
-      node_final_octet   = 12
-      nodes              = range(0, 5)
+      tor_sw1_asn              = 65021,
+      tor_sw2_asn              = 65031,
+      tor_sw1_octet            = "3",
+      tor_sw2_octet            = "3",
+      switch_network_sw1       = vsphere_virtual_machine.tor1.default_ip_address,
+      switch_network_sw2       = vsphere_virtual_machine.tor2.default_ip_address,
+      mgmt_network             = "10.246.153",
+      node_final_octet         = 12
+      nodes                    = range(0, 5),
+      tigera_registry_user     = var.tigera_registry_user,
+      tigera_registry_password = var.tigera_registry_password,
+      calico_early_version     = var.calico_early_version
     })
   }
 }
@@ -73,14 +75,14 @@ data "cloudinit_config" "tor1" {
     filename     = "cloud-config.yaml"
     content_type = "text/cloud-config"
 
-    content = templatefile("${path.module}/templates/sw-cloud-init.tpl", { 
-      switch = 1, 
-      switch_asn = 65031, 
-      switch_network = "10.246.154", 
-      stableip_asn = 64512,
-      stable_ip = "10.30.30.101",
-      switch_final_octet = 23,
-      peer_tor_as = 65021,
+    content = templatefile("${path.module}/templates/sw-cloud-init.tpl", {
+      switch              = 1,
+      switch_asn          = 65031,
+      switch_network      = "10.246.154",
+      stableip_asn        = 64512,
+      stable_ip           = "10.30.30.101",
+      switch_final_octet  = 23,
+      peer_tor_as         = 65021,
       switch_backbone_net = "10.246.153"
     })
   }
@@ -93,14 +95,14 @@ data "cloudinit_config" "tor2" {
     filename     = "cloud-config.yaml"
     content_type = "text/cloud-config"
 
-    content = templatefile("${path.module}/templates/sw-cloud-init.tpl", { 
-      switch = 1, 
-      switch_asn = 65031, 
-      switch_network = "10.246.154", 
-      stableip_asn = 64512,
-      stable_ip = "10.30.30.202",
-      switch_final_octet = 23,
-      peer_tor_as = 65021,
+    content = templatefile("${path.module}/templates/sw-cloud-init.tpl", {
+      switch              = 1,
+      switch_asn          = 65031,
+      switch_network      = "10.246.154",
+      stableip_asn        = 64512,
+      stable_ip           = "10.30.30.202",
+      switch_final_octet  = 23,
+      peer_tor_as         = 65021,
       switch_backbone_net = "10.246.153"
     })
   }
@@ -109,7 +111,6 @@ data "cloudinit_config" "tor2" {
 data "vsphere_virtual_machine" "template" {
   name          = "ubuntu-jammy-larger-var"
   datacenter_id = data.vsphere_datacenter.datacenter.id
-
 }
 
 data "vsphere_resource_pool" "default" {
@@ -136,6 +137,7 @@ data "vsphere_ovf_vm_template" "ubuntu_jammy" {
 }
 
 resource "vsphere_virtual_machine" "k8s_nodes" {
+
   count                = 5
   name                 = "k8s-test-${count.index}"
   datacenter_id        = data.vsphere_datacenter.datacenter.id
@@ -144,7 +146,7 @@ resource "vsphere_virtual_machine" "k8s_nodes" {
   host_system_id       = data.vsphere_host.host.id
   num_cpus             = 2
   num_cores_per_socket = 2
-  memory               = 16
+  memory               = 16384
   guest_id             = data.vsphere_ovf_vm_template.ubuntu_jammy.guest_id
   firmware             = data.vsphere_ovf_vm_template.ubuntu_jammy.firmware
   scsi_type            = data.vsphere_ovf_vm_template.ubuntu_jammy.scsi_type
@@ -224,7 +226,7 @@ resource "vsphere_virtual_machine" "tor1" {
   host_system_id       = data.vsphere_host.host.id
   num_cpus             = 1
   num_cores_per_socket = 2
-  memory               = 8
+  memory               = 8192
   guest_id             = data.vsphere_ovf_vm_template.ubuntu_jammy.guest_id
   firmware             = data.vsphere_ovf_vm_template.ubuntu_jammy.firmware
   scsi_type            = data.vsphere_ovf_vm_template.ubuntu_jammy.scsi_type
@@ -233,7 +235,7 @@ resource "vsphere_virtual_machine" "tor1" {
   vapp {
     properties = {
       hostname  = "tor1"
-      user-data = data.cloudinit_config.calico_early.rendered
+      user-data = data.cloudinit_config.tor1.rendered
     }
   }
   # TODO: Resolve networking between ToRs and k8s nodes
@@ -301,7 +303,7 @@ resource "vsphere_virtual_machine" "tor2" {
   host_system_id       = data.vsphere_host.host.id
   num_cpus             = 1
   num_cores_per_socket = 2
-  memory               = 8
+  memory               = 8192
   guest_id             = data.vsphere_ovf_vm_template.ubuntu_jammy.guest_id
   firmware             = data.vsphere_ovf_vm_template.ubuntu_jammy.firmware
   scsi_type            = data.vsphere_ovf_vm_template.ubuntu_jammy.scsi_type
@@ -362,7 +364,7 @@ resource "vsphere_virtual_machine" "tor2" {
   #   size        = 100
   #   unit_number = 3
   # }
-  
+
   extra_config = {
     "guestinfo.metadata"          = data.cloudinit_config.tor2.rendered
     "guestinfo.metadata.encoding" = "base64"
