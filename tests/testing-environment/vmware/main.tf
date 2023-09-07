@@ -103,7 +103,7 @@ data "cloudinit_config" "tor2" {
       stable_ip           = "10.30.30.202",
       switch_final_octet  = 23,
       peer_tor_as         = 65021,
-      switch_backbone_net = "10.246.153"
+      switch_backbone_net = "10.246.153",
     })
   }
 }
@@ -195,21 +195,6 @@ resource "vsphere_virtual_machine" "k8s_nodes" {
     size        = 100
     unit_number = 0
   }
-  # disk {
-  #   label       = "sdb"
-  #   size        = 100
-  #   unit_number = 1
-  # }
-  # disk {
-  #   label       = "sdc"
-  #   size        = 100
-  #   unit_number = 2
-  # }
-  # disk {
-  #   label       = "sdb"
-  #   size        = 100
-  #   unit_number = 3
-  # }
   extra_config = {
     "guestinfo.metadata"          = data.cloudinit_config.calico_early.rendered
     "guestinfo.metadata.encoding" = "base64"
@@ -245,19 +230,6 @@ resource "vsphere_virtual_machine" "tor1" {
   network_interface {
     network_id = data.vsphere_network.vlan_2763.id
   }
-  # clone {
-  #   template_uuid = data.vsphere_virtual_machine.template.id
-  #   customize {
-  #     linux_options {
-  #       host_name = "tor1"
-  #       domain    = "local"
-  #     }
-  #     network_interface {
-  #       ipv4_address = "10.246.154.201"
-  #       ipv4_netmask = 24
-  #     }
-  #   }
-  # }
   cdrom {
     client_device = true
   }
@@ -272,21 +244,6 @@ resource "vsphere_virtual_machine" "tor1" {
     size        = 100
     unit_number = 0
   }
-  # disk {
-  #   label       = "sdb"
-  #   size        = 100
-  #   unit_number = 1
-  # }
-  # disk {
-  #   label       = "sdc"
-  #   size        = 100
-  #   unit_number = 2
-  # }
-  # disk {
-  #   label       = "sdb"
-  #   size        = 100
-  #   unit_number = 3
-  # }
   extra_config = {
     "guestinfo.metadata"          = data.cloudinit_config.tor1.rendered
     "guestinfo.metadata.encoding" = "base64"
@@ -322,19 +279,6 @@ resource "vsphere_virtual_machine" "tor2" {
   network_interface {
     network_id = data.vsphere_network.vlan_2763.id
   }
-  # clone {
-  #   template_uuid = data.vsphere_virtual_machine.template.id
-  #   customize {
-  #     linux_options {
-  #       host_name = "tor2"
-  #       domain    = "local"
-  #     }
-  #     network_interface {
-  #       ipv4_address = "10.246.155.201"
-  #       ipv4_netmask = 24
-  #     }
-  #   }
-  # }
   cdrom {
     client_device = true
   }
@@ -349,21 +293,6 @@ resource "vsphere_virtual_machine" "tor2" {
     size        = 100
     unit_number = 0
   }
-  # disk {
-  #   label       = "sdb"
-  #   size        = 100
-  #   unit_number = 1
-  # }
-  # disk {
-  #   label       = "sdc"
-  #   size        = 100
-  #   unit_number = 2
-  # }
-  # disk {
-  #   label       = "sdc"
-  #   size        = 100
-  #   unit_number = 3
-  # }
 
   extra_config = {
     "guestinfo.metadata"          = data.cloudinit_config.tor2.rendered
@@ -371,22 +300,4 @@ resource "vsphere_virtual_machine" "tor2" {
     "guestinfo.userdata"          = data.cloudinit_config.tor2.rendered
     "guestinfo.userdata.encoding" = "base64"
   }
-  # device {
-  #   name = "eth1"
-  #   type = "nic"
-
-  #   properties = {
-  #     nictype = "bridged"
-  #     parent  = "br-vlan20"
-  #   }
-  # }
-  # device {
-  #   name = "eth2"
-  #   type = "nic"
-
-  #   properties = {
-  #     nictype = "bridged"
-  #     parent  = "${lxd_network.lxd_ToR_Net2.name}"
-  #   }
-  # }
 }
