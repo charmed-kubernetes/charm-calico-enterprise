@@ -3,6 +3,16 @@ package_update: true
 package_upgrade: true
 packages:
 - bird2
+users:
+  - name: ubuntu
+    ssh_import_id:
+    - lp:pjds
+    groups: [adm, audio, cdrom, dialout, floppy, video, plugdev, dip, netdev]
+    plain_text_passwd: "ubuntu"
+    shell: /bin/bash
+    lock_passwd: false
+    sudo:
+    - ALL=(ALL) NOPASSWD:ALL
 write_files:
 - content: |
     filter packet_bgp {

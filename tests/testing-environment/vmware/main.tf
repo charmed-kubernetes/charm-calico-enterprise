@@ -164,23 +164,6 @@ resource "vsphere_virtual_machine" "k8s_nodes" {
   network_interface {
     network_id = data.vsphere_network.vlan_2765.id
   }
-  # clone {
-  #   template_uuid = data.vsphere_virtual_machine.template.id
-  #   customize {
-  #     linux_options {
-  #       host_name = "k8s-node-${count.index}"
-  #       domain    = "local"
-  #     }
-  #     network_interface {
-  #       ipv4_address = "10.246.154.${100+count.index}"
-  #       ipv4_netmask = 24
-  #     }
-  #     network_interface {
-  #       ipv4_address = "10.246.155.${100+count.index}"
-  #       ipv4_netmask = 24
-  #     }
-  #   }
-  # }
   cdrom {
     client_device = true
   }

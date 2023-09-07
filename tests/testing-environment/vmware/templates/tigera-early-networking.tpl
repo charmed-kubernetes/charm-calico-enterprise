@@ -1,19 +1,19 @@
 #cloud-config
 package_update: true
 package_upgrade: true
-network:
-  version: 2
-  ethernets:
-      eth0:
-          dhcp4: true
-          routes:
-          - to: default
-            via: {{switch_network_sw1}}
-      eth1:
-          dhcp4: true
-          routes:
-          - to: 0.0.0.0/0
-            via: {{switch_network_sw2}}
+# network:
+#   version: 2
+#   ethernets:
+#       eth0:
+#           dhcp4: true
+#           routes:
+#           - to: default
+#             via: {{switch_network_sw1}}
+#       eth1:
+#           dhcp4: true
+#           routes:
+#           - to: 0.0.0.0/0
+#             via: {{switch_network_sw2}}
 users:
   - name: ubuntu
     ssh_import_id:
@@ -29,7 +29,7 @@ write_files:
     #!/bin/bash
     sudo apt-get update
     sudo apt-get install -y containerd
-    sudo ctr image pull --user "{tigera_registry_user}:{tigera_registry_password}" quay.io/tigera/cnx-node:v{calico_early_version}
+    sudo ctr image pull --user "${tigera_registry_user}:${tigera_registry_password}" quay.io/tigera/cnx-node:v${calico_early_version}
     sudo systemctl enable --now calico-early
     sudo systemctl enable --now calico-early-wait
   path: /tmp/setup-env.sh
@@ -78,7 +78,7 @@ write_files:
       --privileged \
       --env CALICO_EARLY_NETWORKING=/calico-early/cfg.yaml \
       --mount type=bind,src=/calico-early,dst=/calico-early,options=rbind:rw \
-      quay.io/tigera/cnx-node:v{CALICO_EARLY_VERSION} calico-early
+      quay.io/tigera/cnx-node:v${calico_early_version} calico-early
     ExecStop=-/usr/bin/ctr task kill --all calico-early || true
     ExecStop=-/usr/bin/ctr container delete calico-early || true
     # lp:1932052 ensure snapshots are removed on delete
@@ -93,37 +93,35 @@ write_files:
   owner: root:root
   permissions: '644'
 - content: |
-    [Unit]
-    Wants=network-online.target
-    After=network-online.target
-    Description=cnx node
+    import jinja2
+    import json
+    import argparse
 
-    [Service]
-    User=root
-    Group=root
-    # https://bugs.launchpad.net/bugs/1911220
-    PermissionsStartOnly=true
-    ExecStartPre=-/usr/bin/ctr task kill --all calico-early || true
-    ExecStartPre=-/usr/bin/ctr container delete calico-early || true
-    # lp:1932052 ensure snapshots are removed on delete
-    ExecStartPre=-/usr/bin/ctr snapshot rm calico-early || true
-    ExecStart=/usr/bin/ctr run \
-      --rm \
-      --net-host \
-      --privileged \
-      --env CALICO_EARLY_NETWORKING=/calico-early/cfg.yaml \
-      --mount type=bind,src=/calico-early,dst=/calico-early,options=rbind:rw \
-      quay.io/tigera/cnx-node:v{CALICO_EARLY_VERSION} calico-early
-    ExecStop=-/usr/bin/ctr task kill --all calico-early || true
-    ExecStop=-/usr/bin/ctr container delete calico-early || true
-    # lp:1932052 ensure snapshots are removed on delete
-    ExecStop=-/usr/bin/ctr snapshot rm calico-early || true
-    Restart=always
-    RestartSec=10
+    parser = argparse.ArgumentParser("Calico Early Renderer")
+    parser.add_argument("node_info", dest="node_info", type=str, help="path to json file with node information")
 
-    [Install]
-    WantedBy=multi-user.target
+    def render_calico_early(args):
+        calico_early_template = None
 
+        with open('/tmp/calico_early.tpl','w') as fh:
+            calico_early_template = jinja2.Template(fh.read())
+
+        node_info = None
+
+        with open(args.node_info, 'r') as json_file:
+            node_info = json.loads(json_file.read())
+
+        # TODO: Any manipulation of node_info before passing to template.
+
+        with open('/calico-early/cfg.yml', 'w') as fh:
+            fh.write(calico_early_template.render(**node_info))
+
+        print("Rendered calico early")
+        
+
+    if __name__ == "__main__":
+        args = parser.parse_args()
+        render_calico_early(args)
   path: /tmp/render_calico_early.py
   owner: ubuntu:ubuntu
   permissions: '744'
