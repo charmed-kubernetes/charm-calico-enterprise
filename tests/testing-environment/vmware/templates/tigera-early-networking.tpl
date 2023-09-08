@@ -30,8 +30,6 @@ write_files:
     sudo apt-get update
     sudo apt-get install -y containerd
     sudo ctr image pull --user "${tigera_registry_user}:${tigera_registry_password}" quay.io/tigera/cnx-node:v${calico_early_version}
-    sudo systemctl enable --now calico-early
-    sudo systemctl enable --now calico-early-wait
   path: /tmp/setup-env.sh
   permissions: "0744"
   owner: root:root
@@ -123,7 +121,7 @@ write_files:
         args = parser.parse_args()
         render_calico_early(args)
   path: /tmp/render_calico_early.py
-  owner: ubuntu:ubuntu
+  owner: root:root
   permissions: '744'
 - content: |
     apiVersion: projectcalico.org/v3
@@ -132,72 +130,122 @@ write_files:
       nodes:
       - asNumber: 65001
         interfaceAddresses:
-        - {node1_interface1_addr}
-        - {node1_interface2_addr}
+        - \{node1_interface1_addr\}
+        - \{node1_interface2_addr\}
         labels:
           rack: rack1
         peerings:
         - peerASNumber: 65501
-          peerIP: {{switch_network_sw1}}
+          peerIP: ${switch_network_sw1}
         - peerASNumber: 65502
-          peerIP: {{switch_network_sw2}}
+          peerIP: ${switch_network_sw2}
         stableAddress:
-          address: 10.30.30.{{final_octet}}
+          address: 10.30.30.11
       - asNumber: 65002
         interfaceAddresses:
-        - {node2_interface1_addr}
-        - {node2_interface2_addr}
+        - \{node2_interface1_addr\}
+        - \{node2_interface2_addr\}
         labels:
           rack: rack1
         peerings:
         - peerASNumber: 65501
-          peerIP: {{switch_network_sw1}}
+          peerIP: ${switch_network_sw1}
         - peerASNumber: 65502
-          peerIP: {{switch_network_sw2}}
+          peerIP: ${switch_network_sw2}
         stableAddress:
-          address: 10.30.30.{{final_octet}}
-        - asNumber: 65003
+          address: 10.30.30.12
+      - asNumber: 65003
         interfaceAddresses:
-        - {node3_interface1_addr}
-        - {node3_interface2_addr}
+        - \{node3_interface1_addr\}
+        - \{node3_interface2_addr\}
         labels:
           rack: rack1
         peerings:
         - peerASNumber: 65501
-          peerIP: {{switch_network_sw1}}
+          peerIP: ${switch_network_sw1}
         - peerASNumber: 65502
-          peerIP: {{switch_network_sw2}}
+          peerIP: ${switch_network_sw2}
         stableAddress:
-          address: 10.30.30.{{final_octet}}
-        - asNumber: 65004
+          address: 10.30.30.13
+      - asNumber: 65004
         interfaceAddresses:
-        - {node4_interface1_addr}
-        - {node4_interface2_addr}
+        - \{node4_interface1_addr\}
+        - \{node4_interface2_addr\}
         labels:
           rack: rack1
         peerings:
         - peerASNumber: 65501
-          peerIP: {{switch_network_sw1}}
+          peerIP: ${switch_network_sw1}
         - peerASNumber: 65502
-          peerIP: {{switch_network_sw2}}
+          peerIP: ${switch_network_sw2}
         stableAddress:
-          address: 10.30.30.{{final_octet}}
+          address: 10.30.30.14
       - asNumber: 65005
         interfaceAddresses:
-        - {node5_interface1_addr}
-        - {node5_interface2_addr}
+        - \{node5_interface1_addr\}
+        - \{node5_interface2_addr\}
         labels:
           rack: rack1
         peerings:
         - peerASNumber: 65501
-          peerIP: {{switch_network_sw1}}
+          peerIP: ${switch_network_sw1}
         - peerASNumber: 65502
-          peerIP: {{switch_network_sw2}}
+          peerIP: ${switch_network_sw2}
         stableAddress:
-          address: 10.30.30.{{final_octet}}
-      
+          address: 10.30.30.15
   path: /calico-early/cfg.yaml
   owner: root:root
+  permissions: '644'
+- content: |
+    #!/bin/env python3
+    import yaml
+    import subprocess
+    import json
+
+
+    def reconfigure_netplan():
+        netplan = None
+        subprocess.check_call("sudo dhclient".split())
+
+        with open('/etc/netplan/50-cloud-init.yaml', 'r') as fh:
+            netplan = yaml.safe_load(fh.read())
+        ip_json = json.loads(subprocess.check_output("ip -j -4 a".split()).decode('utf-8'))
+        netplan['network']['ethernets'].update({
+                "ens192": {
+                    "routes": [{
+                        "to": "default",
+                        "via": "10.246.154.134"
+                    }],
+                    "addresses": [[ip['addr_info'][0]['local'] for ip in ip_json if ip['ifname'] == "ens192"][0] + "/24"]
+                },
+                "ens224": {
+                    "routes": [{
+                        "to": "0.0.0.0/1",
+                        "via": "10.246.155.36"
+                    }],
+                    "addresses": [[ip['addr_info'][0]['local'] for ip in ip_json if ip['ifname'] == "ens224"][0] + "/24"]
+                }
+            })
+        with open('/etc/netplan/50-cloud-init.yaml', 'w') as fh:
+            fh.write(yaml.dump(netplan))
+        print("Wrote updated netplan!")
+
+        subprocess.call("sudo netplan apply".split())
+
+    if __name__ == "__main__":
+        reconfigure_netplan()
+  path: /tmp/reconfigre_netplan.py
+  permissions: '744'
+  owner: root:root
+output: {all: '| tee -a /var/log/cloud-init-output.log'}
 runcmd:
-- ["/tmp/configure_gateway.py", "--cidr", "10.10.10.0/24", "--gateway", "10.10.10.3"]
+# - ["/tmp/configure_gateway.py", "--cidr", "10.10.10.0/24", "--gateway", "10.10.10.3"]
 - [/tmp/setup-env.sh]
+- [/tmp/reconfigre_netplan.py]
+- sudo systemctl start calico-early
+- sudo systemctl start calico-early-wait
+# power_state:
+#   delay: 0
+#   mode: reboot
+#   timeout: 30
+#   condition: true
