@@ -91,60 +91,19 @@ write_files:
   owner: root:root
   permissions: '644'
 - content: |
-    import jinja2
-    import json
-    import argparse
-
-    parser = argparse.ArgumentParser("Calico Early Renderer")
-    parser.add_argument("node_info", dest="node_info", type=str, help="path to json file with node information")
-
-    def render_calico_early(args):
-        calico_early_template = None
-
-        with open('/tmp/calico_early.tpl','w') as fh:
-            calico_early_template = jinja2.Template(fh.read())
-
-        node_info = None
-
-        with open(args.node_info, 'r') as json_file:
-            node_info = json.loads(json_file.read())
-
-        # TODO: Any manipulation of node_info before passing to template.
-
-        with open('/calico-early/cfg.yml', 'w') as fh:
-            fh.write(calico_early_template.render(**node_info))
-
-        print("Rendered calico early")
-        
-
-    if __name__ == "__main__":
-        args = parser.parse_args()
-        render_calico_early(args)
-  path: /tmp/render_calico_early.py
+    Create the file
+  path: /calico-early/hello-world
   owner: root:root
-  permissions: '744'
+  permissions: '644'
 - content: |
     apiVersion: projectcalico.org/v3
     kind: EarlyNetworkingConfiguration
     spec:
       nodes:
-      - asNumber: 65001
+      - asNumber: 64512
         interfaceAddresses:
-        - \{node1_interface1_addr\}
-        - \{node1_interface2_addr\}
-        labels:
-          rack: rack1
-        peerings:
-        - peerASNumber: 65501
-          peerIP: ${switch_network_sw1}
-        - peerASNumber: 65502
-          peerIP: ${switch_network_sw2}
-        stableAddress:
-          address: 10.30.30.11
-      - asNumber: 65002
-        interfaceAddresses:
-        - \{node2_interface1_addr\}
-        - \{node2_interface2_addr\}
+        - {{node0_interface1_addr}}
+        - {{node0_interface2_addr}}
         labels:
           rack: rack1
         peerings:
@@ -154,10 +113,10 @@ write_files:
           peerIP: ${switch_network_sw2}
         stableAddress:
           address: 10.30.30.12
-      - asNumber: 65003
+      - asNumber: 64513
         interfaceAddresses:
-        - \{node3_interface1_addr\}
-        - \{node3_interface2_addr\}
+        - {{node1_interface1_addr}}
+        - {{node1_interface2_addr}}
         labels:
           rack: rack1
         peerings:
@@ -167,23 +126,10 @@ write_files:
           peerIP: ${switch_network_sw2}
         stableAddress:
           address: 10.30.30.13
-      - asNumber: 65004
+      - asNumber: 64515
         interfaceAddresses:
-        - \{node4_interface1_addr\}
-        - \{node4_interface2_addr\}
-        labels:
-          rack: rack1
-        peerings:
-        - peerASNumber: 65501
-          peerIP: ${switch_network_sw1}
-        - peerASNumber: 65502
-          peerIP: ${switch_network_sw2}
-        stableAddress:
-          address: 10.30.30.14
-      - asNumber: 65005
-        interfaceAddresses:
-        - \{node5_interface1_addr\}
-        - \{node5_interface2_addr\}
+        - {{node2_interface1_addr}}
+        - {{node2_interface2_addr}}
         labels:
           rack: rack1
         peerings:
@@ -193,7 +139,33 @@ write_files:
           peerIP: ${switch_network_sw2}
         stableAddress:
           address: 10.30.30.15
-  path: /calico-early/cfg.yaml
+      - asNumber: 64516
+        interfaceAddresses:
+        - {{node3_interface1_addr}}
+        - {{node3_interface2_addr}}
+        labels:
+          rack: rack1
+        peerings:
+        - peerASNumber: 65501
+          peerIP: ${switch_network_sw1}
+        - peerASNumber: 65502
+          peerIP: ${switch_network_sw2}
+        stableAddress:
+          address: 10.30.30.16
+      - asNumber: 64517
+        interfaceAddresses:
+        - {{node4_interface1_addr}}
+        - {{node4_interface2_addr}}
+        labels:
+          rack: rack1
+        peerings:
+        - peerASNumber: 65501
+          peerIP: ${switch_network_sw1}
+        - peerASNumber: 65502
+          peerIP: ${switch_network_sw2}
+        stableAddress:
+          address: 10.30.30.17
+  path: /tmp/calico_early.tpl
   owner: root:root
   permissions: '644'
 - content: |
@@ -237,11 +209,47 @@ write_files:
   path: /tmp/reconfigre_netplan.py
   permissions: '744'
   owner: root:root
+- content: |
+    #!/bin/env python3
+    import jinja2
+    import json
+    import argparse
+    import subprocess
+
+    parser = argparse.ArgumentParser("Calico Early Renderer")
+
+    def render_calico_early(args):
+        calico_early_template = None
+
+        with open("/tmp/calico_early.tpl", "r") as fh:
+            calico_early_template = jinja2.Template(fh.read())
+
+        ip_json = json.loads(subprocess.check_output("ip -j -4 a".split()).decode("utf-8"))
+        ip_ens192 = [[ip["addr_info"][0]["local"] for ip in ip_json if ip["ifname"] == "ens192"][0]][0]
+        ip_ens224 = [[ip["addr_info"][0]["local"] for ip in ip_json if ip["ifname"] == "ens224"][0]][0]
+        hostname = json.loads(subprocess.check_output("hostnamectl status --json short".split()).decode("utf-8"))['StaticHostname']
+        node_info = {
+            f"node{hostname.split('-')[2]}_interface1_addr": ip_ens192,
+            f"node{hostname.split('-')[2]}_interface2_addr": ip_ens224,
+        }
+
+        with open("/calico-early/cfg.yaml", "w") as fh:
+            fh.write(calico_early_template.render(**node_info))
+
+        print("Rendered calico early")
+
+    if __name__ == "__main__":
+        args = parser.parse_args()
+        render_calico_early(args)
+  path: /tmp/render_calico_early.py
+  permissions: '744'
+  owner: root:root
 output: {all: '| tee -a /var/log/cloud-init-output.log'}
 runcmd:
 # - ["/tmp/configure_gateway.py", "--cidr", "10.10.10.0/24", "--gateway", "10.10.10.3"]
 - [/tmp/setup-env.sh]
 - [/tmp/reconfigre_netplan.py]
+- [/tmp/render_calico_early.py]
 - sudo systemctl start calico-early
 - sudo systemctl start calico-early-wait
 # power_state:

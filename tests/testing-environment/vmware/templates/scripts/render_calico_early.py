@@ -1,28 +1,30 @@
+#!/bin/env python3
 import jinja2
 import json
 import argparse
+import subprocess
 
 parser = argparse.ArgumentParser("Calico Early Renderer")
-parser.add_argument("node_info", dest="node_info", type=str, help="path to json file with node information")
 
 def render_calico_early(args):
     calico_early_template = None
 
-    with open('/tmp/calico_early.tpl','w') as fh:
+    with open("/tmp/calico_early.tpl", "r") as fh:
         calico_early_template = jinja2.Template(fh.read())
 
-    node_info = None
+    ip_json = json.loads(subprocess.check_output("ip -j -4 a".split()).decode("utf-8"))
+    ip_ens192 = [[ip["addr_info"][0]["local"] for ip in ip_json if ip["ifname"] == "ens192"][0]][0]
+    ip_ens224 = [[ip["addr_info"][0]["local"] for ip in ip_json if ip["ifname"] == "ens224"][0]][0]
+    hostname = json.loads(subprocess.check_output("hostnamectl status --json short".split()).decode("utf-8"))['StaticHostname']
+    node_info = {
+        f"node{hostname.split('-')[2]}_interface1_addr": ip_ens192,
+        f"node{hostname.split('-')[2]}_interface2_addr": ip_ens224,
+    }
 
-    with open(args.node_info, 'r') as json_file:
-        node_info = json.loads(json_file.read())
-
-    # TODO: Any manipulation of node_info before passing to template.
-
-    with open('/calico-early/cfg.yml', 'w') as fh:
+    with open("/calico-early/cfg.yaml", "w") as fh:
         fh.write(calico_early_template.render(**node_info))
 
     print("Rendered calico early")
-    
 
 if __name__ == "__main__":
     args = parser.parse_args()

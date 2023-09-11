@@ -63,7 +63,8 @@ data "cloudinit_config" "calico_early" {
       nodes                    = range(0, 5),
       tigera_registry_user     = var.tigera_registry_user,
       tigera_registry_password = var.tigera_registry_password,
-      calico_early_version     = var.calico_early_version
+      calico_early_version     = var.calico_early_version,
+      k8s_prefix               = "k8s-node"
     })
   }
 }
@@ -77,12 +78,12 @@ data "cloudinit_config" "tor1" {
 
     content = templatefile("${path.module}/templates/sw-cloud-init.tpl", {
       switch              = 1,
-      switch_asn          = 65031,
+      switch_asn          = 65501,
       switch_network      = "10.246.154",
       stableip_asn        = 64512,
       stable_ip           = "10.30.30.101",
       switch_final_octet  = 23,
-      peer_tor_as         = 65021,
+      peer_tor_as         = 65502,
       switch_backbone_net = "10.246.153"
     })
   }
@@ -97,12 +98,12 @@ data "cloudinit_config" "tor2" {
 
     content = templatefile("${path.module}/templates/sw-cloud-init.tpl", {
       switch              = 1,
-      switch_asn          = 65031,
+      switch_asn          = 65502,
       switch_network      = "10.246.154",
       stableip_asn        = 64512,
       stable_ip           = "10.30.30.202",
       switch_final_octet  = 23,
-      peer_tor_as         = 65021,
+      peer_tor_as         = 65501,
       switch_backbone_net = "10.246.153",
     })
   }
