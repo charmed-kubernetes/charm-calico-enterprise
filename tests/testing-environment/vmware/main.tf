@@ -137,6 +137,12 @@ data "vsphere_ovf_vm_template" "ubuntu_jammy" {
   }
 }
 
+resource "vsphere_folder" "folder" {
+  path                 = var.vsphere_folder
+  type                 = "vm"
+  datacenter_id        = data.vsphere_datacenter.datacenter.id
+}
+
 resource "vsphere_virtual_machine" "k8s_nodes" {
 
   count                = 5
@@ -152,7 +158,7 @@ resource "vsphere_virtual_machine" "k8s_nodes" {
   firmware             = data.vsphere_ovf_vm_template.ubuntu_jammy.firmware
   scsi_type            = data.vsphere_ovf_vm_template.ubuntu_jammy.scsi_type
   nested_hv_enabled    = data.vsphere_ovf_vm_template.ubuntu_jammy.nested_hv_enabled
-  folder               = "fe-crew-root/pjds/manual-machines"
+  folder               = vsphere_folder.folder.path
   vapp {
     properties = {
       hostname  = "k8s-node-${count.index}"
@@ -200,7 +206,7 @@ resource "vsphere_virtual_machine" "tor1" {
   firmware             = data.vsphere_ovf_vm_template.ubuntu_jammy.firmware
   scsi_type            = data.vsphere_ovf_vm_template.ubuntu_jammy.scsi_type
   nested_hv_enabled    = data.vsphere_ovf_vm_template.ubuntu_jammy.nested_hv_enabled
-  folder               = "fe-crew-root/pjds/manual-machines"
+  folder               = vsphere_folder.folder.path
   vapp {
     properties = {
       hostname  = "tor1"
@@ -249,7 +255,7 @@ resource "vsphere_virtual_machine" "tor2" {
   firmware             = data.vsphere_ovf_vm_template.ubuntu_jammy.firmware
   scsi_type            = data.vsphere_ovf_vm_template.ubuntu_jammy.scsi_type
   nested_hv_enabled    = data.vsphere_ovf_vm_template.ubuntu_jammy.nested_hv_enabled
-  folder               = "fe-crew-root/pjds/manual-machines"
+  folder               = vsphere_folder.folder.path
   vapp {
     properties = {
       hostname  = "tor2"

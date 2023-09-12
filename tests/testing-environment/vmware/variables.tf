@@ -8,6 +8,11 @@ variable "vsphere_password" {
     default = "PASSWORD NOT SET" 
 }
 
+variable "vsphere_folder" {
+    type = string
+    default = "VARIABLE NOT SET" 
+}
+
 variable "vsphere_server" {
     type = string
     default = "http://127.0.0.1"
