@@ -63,8 +63,7 @@ jobs:
             -var="vsphere_password=${VSPHERE_PASS}" \
             -var="vsphere_server=${VSPHERE_ENDPOINT}" \
             -var="vsphere_folder=${VSPHERE_FOLDER}" \
-            -var='tigera_registry_user=SECRET_PROVIDED_VIA_LASTPASS' \
-            -var='tigera_registry_password=PASSWD_PROVIDED_VIA_LASTPASS' \
+            -auto-approve
             
       - name: Run test
         run: tox -e integration -- --basetemp=/home/ubuntu/pytest
