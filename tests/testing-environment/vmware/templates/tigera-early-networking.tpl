@@ -14,6 +14,8 @@ package_upgrade: true
 #           routes:
 #           - to: 0.0.0.0/0
 #             via: {{switch_network_sw2}}
+packages:
+- jq
 users:
   - name: ubuntu
     ssh_import_id:
@@ -186,14 +188,14 @@ write_files:
                 "ens192": {
                     "routes": [{
                         "to": "default",
-                        "via": "10.246.154.134"
+                        "via": "${switch_network_sw1}"
                     }],
                     "addresses": [[ip['addr_info'][0]['local'] for ip in ip_json if ip['ifname'] == "ens192"][0] + "/24"]
                 },
                 "ens224": {
                     "routes": [{
                         "to": "0.0.0.0/1",
-                        "via": "10.246.155.36"
+                        "via": "${switch_network_sw2}"
                     }],
                     "addresses": [[ip['addr_info'][0]['local'] for ip in ip_json if ip['ifname'] == "ens224"][0] + "/24"]
                 }
@@ -252,6 +254,8 @@ runcmd:
 - [/tmp/render_calico_early.py]
 - sudo systemctl start calico-early
 - sudo systemctl start calico-early-wait
+- iptables -t nat -A POSTROUTING -s 192.168.0.0/16 ! -d 10.30.30.0/24 -o eth0 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens192") | .addr_info[0].local')
+- iptables -t nat -A POSTROUTING -s 10.30.30.0/24 ! -d 10.30.30.0/24 -o eth0 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens192") | .addr_info[0].local')
 # power_state:
 #   delay: 0
 #   mode: reboot
