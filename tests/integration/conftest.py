@@ -15,12 +15,12 @@ import pytest_asyncio
 import yaml
 from juju.tag import untag
 from lightkube import Client, KubeConfig, codecs
-from lightkube.generic_resource import create_global_resource
 from lightkube.resources.apps_v1 import DaemonSet, Deployment
 from lightkube.resources.core_v1 import Namespace, Node, Pod, Service
 from lightkube.types import PatchType
 
 log = logging.getLogger(__name__)
+KubeCtl = Union[str, Tuple[int, str, str]]
 
 
 def pytest_addoption(parser):
@@ -114,7 +114,7 @@ def gateway_client_pod(client, worker_node, subnet_resource):
 
 
 async def wait_pod_ips(client, pods):
-    """Returns a list of pods which have an ip address assigned."""
+    """Return a list of pods which have an ip address assigned."""
     log.info("Waiting for pods...")
     ready = []
 
@@ -137,9 +137,8 @@ async def wait_pod_ips(client, pods):
     return ready
 
 
-
 async def wait_for_removal(client, pods):
-    """Waits until listed pods are no longer present in the cluster."""
+    """Wait until listed pods are no longer present in the cluster."""
     for pod in pods:
         namespace = pod.metadata.namespace
         remaining_pods = list(client.list(Pod, namespace=namespace))
@@ -194,7 +193,6 @@ def iperf3_pods(client):
 @pytest.fixture(scope="module")
 def kubectl(ops_test, kubeconfig):
     """Supports running kubectl exec commands."""
-    KubeCtl = Union[str, Tuple[int, str, str]]
 
     async def f(*args, **kwargs) -> KubeCtl:
         """Actual callable returned by the fixture.
@@ -211,31 +209,34 @@ def kubectl(ops_test, kubeconfig):
 
     return f
 
+
 @pytest.fixture(scope="module")
 def tigera_ee_license():
-    """Fetches the Tigera EE license from the environement"""
-    KubeCtl = Union[str, Tuple[int, str, str]]
+    """Fetch the Tigera EE license from the environment."""
+    Union[str, Tuple[int, str, str]]
 
-    if 'CHARM_TIGERA_EE_LICNESE' not in os.environ:
+    if "CHARM_TIGERA_EE_LICNESE" not in os.environ:
         raise KeyError("Tigera License not found")
     tg_ee_license = None
-    with open(os.environ['CHARM_TIGERA_EE_LICNESE'], 'r') as fh:
+    with open(os.environ["CHARM_TIGERA_EE_LICNESE"], "r") as fh:
         tg_ee_license = fh.read()
 
     return tg_ee_license
 
+
 @pytest.fixture(scope="module")
 def tigera_ee_reg_secret():
-    """Fetches the Tigera EE registry secret"""
-    KubeCtl = Union[str, Tuple[int, str, str]]
+    """Fetch the Tigera EE registry secret."""
+    Union[str, Tuple[int, str, str]]
 
-    if 'CHARM_TIGERA_EE_REG_SECRET' not in os.environ:
+    if "CHARM_TIGERA_EE_REG_SECRET" not in os.environ:
         raise KeyError("Tigera License not found")
     tg_reg_secret = None
-    with open(os.environ['CHARM_TIGERA_EE_REG_SECRET'], 'r') as fh:
+    with open(os.environ["CHARM_TIGERA_EE_REG_SECRET"], "r") as fh:
         tg_reg_secret = fh.read()
 
     return tg_reg_secret
+
 
 @pytest.fixture(scope="module")
 def kubectl_exec(kubectl):
@@ -263,9 +264,7 @@ def module_name(request):
 
 @pytest.fixture(scope="module")
 async def k8s_cloud(kubeconfig, module_name, ops_test, request):
-    """Use an existing k8s-cloud or create a k8s-cloud
-    for deploying a new k8s model into.
-    """
+    """Use an existing k8s-cloud or create a k8s-cloud for deploying a new k8s model into."""
     cloud_name = request.config.option.k8s_cloud or f"{module_name}-k8s-cloud"
     controller = await ops_test.model.get_controller()
     try:

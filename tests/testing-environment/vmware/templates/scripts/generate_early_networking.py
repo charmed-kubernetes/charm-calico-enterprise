@@ -1,7 +1,7 @@
 import ipaddress
-import yaml
-import jinja2
 
+import jinja2
+import yaml
 
 NODE_TEMPLATE = """
 interfaceAddresses:
@@ -23,8 +23,8 @@ TOR2_CIDR = "10.246.156.0/24"
 
 
 def generate_early_config():
-    tor1_cidr = ipaddress.IPv4Network(TOR1_CIDR)
-    tor2_cidr = ipaddress.IPv4Network(TOR2_CIDR)
+    ipaddress.IPv4Network(TOR1_CIDR)
+    ipaddress.IPv4Network(TOR2_CIDR)
     nodes_template = jinja2.Template(NODE_TEMPLATE)
 
     early_network_config = {

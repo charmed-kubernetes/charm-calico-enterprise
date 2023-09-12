@@ -20,7 +20,7 @@ import tempfile
 import time
 import traceback
 from base64 import b64decode
-from subprocess import check_output
+from subprocess import CalledProcessError, check_output
 
 import yaml
 from conctl import getContainerRuntimeCtl
@@ -250,7 +250,7 @@ class TigeraCharm(CharmBase):
         try:
             self.kubectl("create", "-f", installation_manifest)
             self.kubectl("create", "-f", crds_manifest)
-        except:
+        except CalledProcessError:
             # TODO implement a check which checks for tigera resources
             logger.warn("Kubectl create failed - tigera operator my not be deployed.")
             return True
@@ -330,6 +330,7 @@ class TigeraCharm(CharmBase):
         return not self.is_kubeconfig_available() or not service_cidr or not registry
 
     def pre_tigera_init_config(self):
+        """Create required namespaces and label nodes before creating bgp_layout."""
         if not pathlib.Path(KUBECONFIG_PATH).exists():
             self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
             return False
@@ -337,7 +338,7 @@ class TigeraCharm(CharmBase):
         try:
             self.kubectl("create", "ns", "tigera-operator")
             self.kubectl("create", "ns", "calico-system")
-        except:
+        except CalledProcessError:
             pass
         if not bgp_parameters:
             self.unit.status = BlockedStatus("bgp_parameters is required.")
@@ -346,7 +347,7 @@ class TigeraCharm(CharmBase):
         for node in yaml.safe_load(bgp_parameters):
             try:
                 self.kubectl("label", "node", node["hostname"], f"rack={node['rack']}")
-            except:
+            except CalledProcessError:
                 logger.warn(f"Node labelling failed. Does {node['hostname']} exist?")
                 pass
 
@@ -361,6 +362,7 @@ class TigeraCharm(CharmBase):
         return True
 
     def patch_tigera_install(self):
+        """Install Tigera operator."""
         nic_regex = self.model.config["nic_regex"]
         self.kubectl(
             "patch",
@@ -368,9 +370,8 @@ class TigeraCharm(CharmBase):
             "default",
             "--type=merge",
             "-p",
-            '{"spec": {"calicoNetwork": { "nodeAddressAutodetectionV4": {"interface": "%s"}}}}'.format(
-                nic_regex
-            ),
+            '{"spec": {"calicoNetwork": { "nodeAddressAutodetectionV4": {"interface": "%s"}}}}'
+            % nic_regex,
         )
         return True
 
@@ -392,6 +393,7 @@ class TigeraCharm(CharmBase):
         self.kubectl("apply", "-n", "tigera-operator", "-f", "/tmp/ippools.yaml")
 
     def set_active_status(self):
+        """Set active if cni is configured."""
         if self.stored.tigera_cni_configured:
             self.unit.status = ActiveStatus()
 
@@ -421,6 +423,7 @@ class TigeraCharm(CharmBase):
             return
 
     def on_cni_relation_changed(self, event):
+        """Run CNI relation changed hook."""
         if not self.stored.tigera_configured:
             self.on_config_changed(event)
 
@@ -445,7 +448,7 @@ class TigeraCharm(CharmBase):
         """Run upgrade-charm hook."""
         return
 
-    def on_config_changed(self, event):
+    def on_config_changed(self, event):  # noqa C901, TODO: consider using reconciler
         """Config changed event processing.
 
         The leader needs to know the BGP information about every node and only the leader should apply
@@ -456,7 +459,7 @@ class TigeraCharm(CharmBase):
         """
         self.stored.tigera_configured = False
         if not self.preflight_checks():
-            # TOOD: Enters a defer loop
+            # TODO: Enters a defer loop
             # event.defer()
             return
         if not self.unit.is_leader():
@@ -469,7 +472,7 @@ class TigeraCharm(CharmBase):
             return
 
         if not self.pre_tigera_init_config():
-            # TOOD: Enters a defer loop
+            # TODO: Enters a defer loop
             # event.defer()
             return
         service_cidr = self.tigera_peer_data("service-cidr")
@@ -480,7 +483,7 @@ class TigeraCharm(CharmBase):
 
         self.unit.status = MaintenanceStatus("Applying Tigera Operator")
         if not self.apply_tigera_operator():
-            # TOOD: Enters a defer loop
+            # TODO: Enters a defer loop
             # event.defer()
             return
 
@@ -494,7 +497,7 @@ class TigeraCharm(CharmBase):
                     "-n",
                     "tigera-operator",
                 )
-            except:
+            except CalledProcessError:
                 pass
             self.kubectl(
                 "create",

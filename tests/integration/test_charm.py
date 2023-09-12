@@ -4,7 +4,6 @@ import json
 import logging
 import re
 import shlex
-from math import isclose
 from pathlib import Path
 
 import pytest
@@ -41,23 +40,24 @@ async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_
     log.info("Rendering overlays...")
     # TODO: Undo this
     bundle, *overlays = await ops_test.async_render_bundles(
-        *overlays, charm=charm, tigera_reg_secret=tigera_ee_reg_secret, tigera_ee_license=tigera_ee_license
+        *overlays,
+        charm=charm,
+        tigera_reg_secret=tigera_ee_reg_secret,
+        tigera_ee_license=tigera_ee_license,
     )
 
     log.info("Deploy charm...")
     # TODO: Undo this
-    juju_cmd = f"deploy --map-machines=existing -m {ops_test.model_full_name} {bundle} --trust " + " ".join(
-        f"--overlay={f}" for f in overlays
+    juju_cmd = (
+        f"deploy --map-machines=existing -m {ops_test.model_full_name} {bundle} --trust "
+        + " ".join(f"--overlay={f}" for f in overlays)
     )
     print(juju_cmd)
 
-    await ops_test.juju(
-        *shlex.split(juju_cmd), check=True, fail_msg="Bundle deploy failed"
-    )
+    await ops_test.juju(*shlex.split(juju_cmd), check=True, fail_msg="Bundle deploy failed")
     await ops_test.model.block_until(lambda: "tigera" in ops_test.model.applications, timeout=60)
 
     await ops_test.model.wait_for_idle(status="active", timeout=60 * 60)
-
 
 
 # async def test_pod_icmp_latency(kubectl_exec, client, iperf3_pods, annotate):
@@ -404,7 +404,7 @@ async def test_network_policies(client, kubectl_exec, network_policies):
             client.delete(type(obj), obj.metadata.name, namespace=obj.metadata.namespace)
 
 
-class iPerfError(Exception):
+class iPerfError(Exception):  # noqa N801
     pass
 
 
