@@ -104,7 +104,7 @@ options:
     default: ""
     type: string
     description: |
-      Comma separated list of CIDRs to use for autodetection. Overriden by nic_autodetection_regex. 
+      Comma separated list of CIDRs to use for autodetection. Overridden by nic_autodetection_regex. 
       For details on Autodetection see: https://docs.tigera.io/calico-enterprise/latest/networking/ipam/ip-autodetection#autodetection-methods
   bgp_parameters:
     default: ''

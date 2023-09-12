@@ -1,14 +1,30 @@
-name: tigera
-display-name: Tigera Calico Charm
-summary: The charm for Tigera's Calico EE
-
+name: calico-enterprise
+display-name: Tigera Calico Enterprise Charm
+summary: The charm for Tigera's Calico Enterprise Edition
+maintainers:
+  - Peter De Sousa <peter.de.sousa@canonical.com>
+  - George Kraft <george.kraft@canonical.com>
+  - Adam Dyess <adam.dyess@canonical.com>
+  - Kevin Monroe <kevin.monroe@canonical.com>
+  - Mateo Florido <mateo.florido@canonical.com>
 description: |
-  The charm for Tigera's Calico EE
-
+  The charm for Tigera's Calico Enterprise Edition
+docs: https://discourse.charmhub.io/t/calico-docs-index/6167
+tags:
+  - networking
+  - kubernetes
+  - cni
 subordinate: true
 series:
   - jammy
   - focal
+requires:
+  cni:
+    interface: kubernetes-cni
+    scope: container
+peers:
+  tigera:
+    interface: tigera
 resources:
   cnx-node-image:
     type: file
@@ -22,11 +38,3 @@ resources:
     type: file
     filename: tigera-crds.yaml
     description: 'The Tigera CRDs manifest'
-
-requires:
-  cni:
-    interface: kubernetes-cni
-    scope: container
-peers:
-  tigera:
-    interface: tigera
