@@ -109,32 +109,19 @@ data "cloudinit_config" "tor2" {
   }
 }
 
-data "vsphere_virtual_machine" "template" {
-  name          = "ubuntu-jammy-larger-var"
-  datacenter_id = data.vsphere_datacenter.datacenter.id
-}
-
 data "vsphere_resource_pool" "default" {
   name          = format("%s%s", data.vsphere_compute_cluster.cluster.name, "/Resources")
   datacenter_id = data.vsphere_datacenter.datacenter.id
 }
-
 
 data "vsphere_host" "host" {
   name          = "eyerok.internal"
   datacenter_id = data.vsphere_datacenter.datacenter.id
 }
 
-data "vsphere_ovf_vm_template" "ubuntu_jammy" {
-  name              = "ubuntu-ovf-deploy"
-  disk_provisioning = "thin"
-  resource_pool_id  = data.vsphere_resource_pool.default.id
-  datastore_id      = data.vsphere_datastore.datastore.id
-  host_system_id    = data.vsphere_host.host.id
-  remote_ovf_url    = "http://cloud-images.ubuntu.com/daily/server/jammy/current/jammy-server-cloudimg-amd64.ova"
-  ovf_network_map = {
-    "VM Network" : data.vsphere_network.vlan_2764.id
-  }
+data "vsphere_virtual_machine" "template" {
+  name          = "juju-ci-root/templates/jammy-test-template"
+  datacenter_id = data.vsphere_datacenter.datacenter.id
 }
 
 resource "vsphere_folder" "folder" {
@@ -144,20 +131,16 @@ resource "vsphere_folder" "folder" {
 }
 
 resource "vsphere_virtual_machine" "k8s_nodes" {
-
   count                = 5
   name                 = "k8s-test-${count.index}"
-  datacenter_id        = data.vsphere_datacenter.datacenter.id
   resource_pool_id     = data.vsphere_compute_cluster.cluster.resource_pool_id
   datastore_id         = data.vsphere_datastore.datastore.id
-  host_system_id       = data.vsphere_host.host.id
   num_cpus             = 2
   num_cores_per_socket = 2
   memory               = 16384
-  guest_id             = data.vsphere_ovf_vm_template.ubuntu_jammy.guest_id
-  firmware             = data.vsphere_ovf_vm_template.ubuntu_jammy.firmware
-  scsi_type            = data.vsphere_ovf_vm_template.ubuntu_jammy.scsi_type
-  nested_hv_enabled    = data.vsphere_ovf_vm_template.ubuntu_jammy.nested_hv_enabled
+  guest_id             = data.vsphere_virtual_machine.template.guest_id
+  scsi_type            = data.vsphere_virtual_machine.template.scsi_type
+  nested_hv_enabled    = data.vsphere_virtual_machine.template.nested_hv_enabled
   folder               = vsphere_folder.folder.path
   vapp {
     properties = {
@@ -171,20 +154,18 @@ resource "vsphere_virtual_machine" "k8s_nodes" {
   network_interface {
     network_id = data.vsphere_network.vlan_2765.id
   }
+  disk {
+    label            = "sda"
+    size             = 100
+    unit_number      = 0
+    thin_provisioned = data.vsphere_virtual_machine.template.disks.0.thin_provisioned
+  }
   cdrom {
     client_device = true
   }
-  ovf_deploy {
-    allow_unverified_ssl_cert = false
-    remote_ovf_url            = data.vsphere_ovf_vm_template.ubuntu_jammy.remote_ovf_url
-    disk_provisioning         = data.vsphere_ovf_vm_template.ubuntu_jammy.disk_provisioning
-    ovf_network_map           = data.vsphere_ovf_vm_template.ubuntu_jammy.ovf_network_map
-  }
-  disk {
-    label       = "sda"
-    size        = 100
-    unit_number = 0
-  }
+  clone {
+    template_uuid = data.vsphere_virtual_machine.template.id
+  }  
   extra_config = {
     "guestinfo.metadata"          = data.cloudinit_config.calico_early.rendered
     "guestinfo.metadata.encoding" = "base64"
@@ -195,17 +176,14 @@ resource "vsphere_virtual_machine" "k8s_nodes" {
 
 resource "vsphere_virtual_machine" "tor1" {
   name                 = "tor1"
-  datacenter_id        = data.vsphere_datacenter.datacenter.id
   resource_pool_id     = data.vsphere_compute_cluster.cluster.resource_pool_id
   datastore_id         = data.vsphere_datastore.datastore.id
   host_system_id       = data.vsphere_host.host.id
   num_cpus             = 1
   num_cores_per_socket = 2
   memory               = 8192
-  guest_id             = data.vsphere_ovf_vm_template.ubuntu_jammy.guest_id
-  firmware             = data.vsphere_ovf_vm_template.ubuntu_jammy.firmware
-  scsi_type            = data.vsphere_ovf_vm_template.ubuntu_jammy.scsi_type
-  nested_hv_enabled    = data.vsphere_ovf_vm_template.ubuntu_jammy.nested_hv_enabled
+  guest_id             = data.vsphere_virtual_machine.template.guest_id
+  scsi_type            = data.vsphere_virtual_machine.template.scsi_type
   folder               = vsphere_folder.folder.path
   vapp {
     properties = {
@@ -220,19 +198,17 @@ resource "vsphere_virtual_machine" "tor1" {
   network_interface {
     network_id = data.vsphere_network.vlan_2763.id
   }
-  cdrom {
-    client_device = true
-  }
-  ovf_deploy {
-    allow_unverified_ssl_cert = false
-    remote_ovf_url            = data.vsphere_ovf_vm_template.ubuntu_jammy.remote_ovf_url
-    disk_provisioning         = data.vsphere_ovf_vm_template.ubuntu_jammy.disk_provisioning
-    ovf_network_map           = data.vsphere_ovf_vm_template.ubuntu_jammy.ovf_network_map
-  }
   disk {
     label       = "sda"
     size        = 100
     unit_number = 0
+    thin_provisioned = data.vsphere_virtual_machine.template.disks.0.thin_provisioned
+  }
+  clone {
+    template_uuid = data.vsphere_virtual_machine.template.id
+  }
+  cdrom {
+    client_device = true
   }
   extra_config = {
     "guestinfo.metadata"          = data.cloudinit_config.tor1.rendered
@@ -244,17 +220,14 @@ resource "vsphere_virtual_machine" "tor1" {
 
 resource "vsphere_virtual_machine" "tor2" {
   name                 = "tor2"
-  datacenter_id        = data.vsphere_datacenter.datacenter.id
   resource_pool_id     = data.vsphere_compute_cluster.cluster.resource_pool_id
   datastore_id         = data.vsphere_datastore.datastore.id
   host_system_id       = data.vsphere_host.host.id
   num_cpus             = 1
   num_cores_per_socket = 2
   memory               = 8192
-  guest_id             = data.vsphere_ovf_vm_template.ubuntu_jammy.guest_id
-  firmware             = data.vsphere_ovf_vm_template.ubuntu_jammy.firmware
-  scsi_type            = data.vsphere_ovf_vm_template.ubuntu_jammy.scsi_type
-  nested_hv_enabled    = data.vsphere_ovf_vm_template.ubuntu_jammy.nested_hv_enabled
+  guest_id             = data.vsphere_virtual_machine.template.guest_id
+  scsi_type            = data.vsphere_virtual_machine.template.scsi_type
   folder               = vsphere_folder.folder.path
   vapp {
     properties = {
@@ -269,21 +242,18 @@ resource "vsphere_virtual_machine" "tor2" {
   network_interface {
     network_id = data.vsphere_network.vlan_2763.id
   }
-  cdrom {
-    client_device = true
-  }
-  ovf_deploy {
-    allow_unverified_ssl_cert = false
-    remote_ovf_url            = data.vsphere_ovf_vm_template.ubuntu_jammy.remote_ovf_url
-    disk_provisioning         = data.vsphere_ovf_vm_template.ubuntu_jammy.disk_provisioning
-    ovf_network_map           = data.vsphere_ovf_vm_template.ubuntu_jammy.ovf_network_map
-  }
   disk {
     label       = "sda"
     size        = 100
     unit_number = 0
+    thin_provisioned = data.vsphere_virtual_machine.template.disks.0.thin_provisioned
   }
-
+  clone {
+    template_uuid = data.vsphere_virtual_machine.template.id
+  }
+  cdrom {
+    client_device = true
+  }
   extra_config = {
     "guestinfo.metadata"          = data.cloudinit_config.tor2.rendered
     "guestinfo.metadata.encoding" = "base64"
