@@ -211,31 +211,19 @@ def kubectl(ops_test, kubeconfig):
 
 
 @pytest.fixture(scope="module")
-def tigera_ee_license():
+def tigera_ee_license() -> str:
     """Fetch the Tigera EE license from the environment."""
-    Union[str, Tuple[int, str, str]]
-
-    if "CHARM_TIGERA_EE_LICNESE" not in os.environ:
-        raise KeyError("Tigera License not found")
-    tg_ee_license = None
-    with open(os.environ["CHARM_TIGERA_EE_LICNESE"], "r") as fh:
-        tg_ee_license = fh.read()
-
-    return tg_ee_license
+    if license := os.environ.get("CHARM_TIGERA_EE_LICNESE"):
+        return license
+    raise KeyError("Tigera License not found")
 
 
 @pytest.fixture(scope="module")
-def tigera_ee_reg_secret():
+def tigera_ee_reg_secret() -> str:
     """Fetch the Tigera EE registry secret."""
-    Union[str, Tuple[int, str, str]]
-
-    if "CHARM_TIGERA_EE_REG_SECRET" not in os.environ:
-        raise KeyError("Tigera License not found")
-    tg_reg_secret = None
-    with open(os.environ["CHARM_TIGERA_EE_REG_SECRET"], "r") as fh:
-        tg_reg_secret = fh.read()
-
-    return tg_reg_secret
+    if reg_secret := os.environ.get("CHARM_TIGERA_EE_REG_SECRET"):
+        return reg_secret
+    raise KeyError("Tigera Reg Secret not found")
 
 
 @pytest.fixture(scope="module")
@@ -243,6 +231,7 @@ def kubectl_exec(kubectl):
     async def f(name: str, namespace: str, cmd: str, **kwds):
         shcmd = f'exec {name} -n {namespace} -- sh -c "{cmd}"'
         return await kubectl(*shlex.split(shcmd), **kwds)
+
     return f
 
 
