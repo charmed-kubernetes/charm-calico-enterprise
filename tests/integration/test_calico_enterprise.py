@@ -36,7 +36,7 @@ async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_
         charm = await ops_test.build_charm(".")
 
     overlays = [
-        "kubernetes-core",
+        ops_test.Bundle("kubernetes-core", channel="edge")
         Path("tests/data/charm.yaml"),
     ]
 
@@ -44,6 +44,8 @@ async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_
     bundle, *overlays = await ops_test.async_render_bundles(
         *overlays,
         charm=charm.resolve(),
+        calico_crd_manifest=0,
+        calico_install_manifest=0,
         tigera_reg_secret=tigera_ee_reg_secret,
         tigera_ee_license=tigera_ee_license,
     )

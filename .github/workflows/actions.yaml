@@ -58,12 +58,12 @@ jobs:
           sudo snap install yq --classic
       - name: Prepare for Terraform Deployment by collecting Environment
         run: |-
-          echo "JUJU_CONTROLLER=$(juju controllers --format yaml | yq '.current-controller')" >> "$GITHUB_ENV"
-          echo "JUJU_CONTROLLER_UUID=$(juju controllers --format yaml | yq '.controllers.${JUJU_CONTROLLER}.controller-uuid')" >> "$GITHUB_ENV"
-          echo "VSPHERE_ENDPOINT=$(cat ~/.local/share/juju/clouds.yaml | yq -r '.clouds.vsphere.endpoint')" >> "$GITHUB_ENV"
-          echo "VSPHERE_USER=$(cat ~/.local/share/juju/credentials.yaml | yq -r '.credentials.vsphere.vsphere-crew.user')" >> "$GITHUB_ENV"
-          echo "VSPHERE_PASS=$(cat ~/.local/share/juju/credentials.yaml | yq -r '.credentials.vsphere.vsphere-crew.password')" >> "$GITHUB_ENV"
-          VSPHERE_FOLDER=$(cat ~/.local/share/juju/credentials.yaml | yq -r '.credentials.vsphere.vsphere-crew.vmfolder')
+          echo "JUJU_CONTROLLER=$(juju controllers --format yaml | yq .current-controller)" >> "$GITHUB_ENV"
+          echo "JUJU_CONTROLLER_UUID=$(juju controllers --format yaml | yq .controllers.${JUJU_CONTROLLER}.controller-uuid)" >> "$GITHUB_ENV"
+          echo "VSPHERE_ENDPOINT=$(cat ~/.local/share/juju/clouds.yaml | yq -r .clouds.vsphere.endpoint)" >> "$GITHUB_ENV"
+          echo "VSPHERE_USER=$(cat ~/.local/share/juju/credentials.yaml | yq -r .credentials.vsphere.vsphere-crew.user)" >> "$GITHUB_ENV"
+          echo "VSPHERE_PASS=$(cat ~/.local/share/juju/credentials.yaml | yq -r .credentials.vsphere.vsphere-crew.password)" >> "$GITHUB_ENV"
+          VSPHERE_FOLDER=$(cat ~/.local/share/juju/credentials.yaml | yq -r .credentials.vsphere.vsphere-crew.vmfolder)
           VSPHERE_FOLDER="${VSPHERE_FOLDER}/Juju Controller (${JUJU_CONTROLLER_UUID})/manual-machines"
           echo "VSPHERE_FOLDER=$VSPHERE_FOLDER" >> "$GITHUB_ENV"
 
