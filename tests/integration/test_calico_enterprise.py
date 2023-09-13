@@ -36,7 +36,7 @@ async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_
         charm = await ops_test.build_charm(".")
 
     overlays = [
-        ops_test.Bundle("kubernetes-core", channel="edge")
+        ops_test.Bundle("kubernetes-core", channel="edge"),
         Path("tests/data/charm.yaml"),
     ]
 
