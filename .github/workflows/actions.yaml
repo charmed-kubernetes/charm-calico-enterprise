@@ -27,6 +27,10 @@ jobs:
     runs-on: self-hosted
     env:
       JUJU_MODEL: calico-enterprise
+      CHARM_TIGERA_EE_LICNESE: ${{ secrets.CHARM_TIGERA_EE_LICNESE }}
+      CHARM_TIGERA_EE_REG_SECRET: ${{ secrets.CHARM_TIGERA_EE_REG_SECRET }}
+
+
     timeout-minutes: 90
     steps:
       - name: Check out code
