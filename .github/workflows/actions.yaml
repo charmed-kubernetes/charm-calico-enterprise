@@ -109,7 +109,7 @@ jobs:
         if: ${{ always() }}
         run: |
           juju destroy-model ${JUJU_MODEL} --force --destroy-storage
-          terraform -chdir=tests/testing-environment/vmware delete \
+          terraform -chdir=tests/testing-environment/vmware destroy \
             -var="vsphere_user=${VSPHERE_USER}" \
             -var="vsphere_password=${VSPHERE_PASS}" \
             -var="vsphere_server=${VSPHERE_ENDPOINT}" \
