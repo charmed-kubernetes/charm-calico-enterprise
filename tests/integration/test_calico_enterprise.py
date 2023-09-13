@@ -30,8 +30,10 @@ PING_LOSS_RE = re.compile(r"(?:([\d\.]+)% packet loss)")
 @pytest.mark.skip_if_deployed
 async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_ee_license):
     log.info("Build charm...")
-    # TODO: Undo this
-    charm = await ops_test.build_charm(".")
+    charm = next(Path(".").glob("calico-enterprise*.charm"), None)
+    if not charm:
+        log.info("Building Charm...")
+        charm = await ops_test.build_charm(".")
 
     overlays = [
         "kubernetes-core",
@@ -41,7 +43,7 @@ async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_
     log.info("Rendering overlays...")
     bundle, *overlays = await ops_test.async_render_bundles(
         *overlays,
-        charm=charm,
+        charm=charm.resolve(),
         tigera_reg_secret=tigera_ee_reg_secret,
         tigera_ee_license=tigera_ee_license,
     )
