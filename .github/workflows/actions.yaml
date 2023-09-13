@@ -52,18 +52,26 @@ jobs:
             --model-default datastore=vsanDatastore
             --model-default primary-network=VLAN_2763
             --model-default force-vm-hardware-version=17
+      - name: Install Terraform
+        run: |-
+          sudo snap install terraform --channel=latest/stable --classic
+          sudo snap install yq --classic
+      - name: Prepare for Terraform Deployment by collecting Environment
+        run: |-
+          echo "JUJU_CONTROLLER=$(juju controllers --format yaml | yq '.current-controller')" >> "$GITHUB_ENV"
+          echo "JUJU_CONTROLLER_UUID=$(juju controllers --format yaml | yq '.controllers.${JUJU_CONTROLLER}.controller-uuid')" >> "$GITHUB_ENV"
+          echo "VSPHERE_ENDPOINT=$(cat ~/.local/share/juju/clouds.yaml | yq -r '.clouds.vsphere.endpoint')" >> "$GITHUB_ENV"
+          echo "VSPHERE_USER=$(cat ~/.local/share/juju/credentials.yaml | yq -r '.credentials.vsphere.vsphere-crew.user')" >> "$GITHUB_ENV"
+          echo "VSPHERE_PASS=$(cat ~/.local/share/juju/credentials.yaml | yq -r '.credentials.vsphere.vsphere-crew.password')" >> "$GITHUB_ENV"
+          VSPHERE_FOLDER=$(cat ~/.local/share/juju/credentials.yaml | yq -r '.credentials.vsphere.vsphere-crew.vmfolder')
+          VSPHERE_FOLDER="${VSPHERE_FOLDER}/Juju Controller (${JUJU_CONTROLLER_UUID})/manual-machines"
+          echo "VSPHERE_FOLDER=$VSPHERE_FOLDER" >> "$GITHUB_ENV"
+
       - name: Terraform Apply DualTor Machine Infra
         run: |-
           sudo snap install terraform --channel=latest/stable --classic
           sudo snap install yq --classic
           juju add-model ${JUJU_MODEL}
-          JUJU_CONTROLLER=$(juju controllers --format yaml | yq '.current-controller')
-          JUJU_CONTROLLER_UUID=$(juju controllers --format yaml | yq ".controllers.${JUJU_CONTROLLER}.controller-uuid")
-          VSPHERE_ENDPOINT=$(cat ~/.local/share/juju/clouds.yaml | yq -r '.clouds.vsphere.endpoint')
-          VSPHERE_USER=$(cat ~/.local/share/juju/credentials.yaml | yq -r '.credentials.vsphere.vsphere-crew.user')
-          VSPHERE_PASS=$(cat ~/.local/share/juju/credentials.yaml | yq -r '.credentials.vsphere.vsphere-crew.password')
-          VSPHERE_FOLDER=$(cat ~/.local/share/juju/credentials.yaml | yq -r '.credentials.vsphere.vsphere-crew.vmfolder')
-          VSPHERE_FOLDER="${VSPHERE_FOLDER}/Juju Controller (${JUJU_CONTROLLER_UUID})/manual-machines"
           terraform -chdir=tests/testing-environment/vmware init
           terraform -chdir=tests/testing-environment/vmware apply \
             -var="vsphere_user=${VSPHERE_USER}" \
@@ -97,3 +105,14 @@ jobs:
         with:
           name: test-run-artifacts
           path: tmp
+      - name: Terraform Teardown
+        if: ${{ always() }}
+        run: |
+          juju destroy-model ${JUJU_MODEL} --force --destroy-storage
+          terraform -chdir=tests/testing-environment/vmware delete \
+            -var="vsphere_user=${VSPHERE_USER}" \
+            -var="vsphere_password=${VSPHERE_PASS}" \
+            -var="vsphere_server=${VSPHERE_ENDPOINT}" \
+            -var="vsphere_folder=${VSPHERE_FOLDER}" \
+            -var="juju_authorized_key=$(cat ~/.local/share/juju/ssh/juju_id_rsa.pub)" \
+            -auto-approve
