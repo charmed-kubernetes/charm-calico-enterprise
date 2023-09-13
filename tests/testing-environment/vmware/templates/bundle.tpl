@@ -38,7 +38,7 @@ applications:
     charm: containerd
     bindings:
       "": bgp
-  tigera:
+  calico-enterprise:
     charm: {CHARM_PATH}
     resources:
       calico-crd-manifest: {TIGERA_CRD_MANIFEST}

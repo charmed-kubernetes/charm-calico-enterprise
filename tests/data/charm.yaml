@@ -1,12 +1,12 @@
 description: Overlay for attaching the current charm
 applications:
-  calico: null
   kubernetes-control-plane:
     options:
       allow-privileged: "true"
   kubernetes-worker:
     num_units: 3
-  tigera:
+  calico: null
+  calico-enterprise:
     charm: {{charm}}
     series: jammy
     resources:
@@ -58,7 +58,7 @@ applications:
     charm: ubuntu
     num_units: 1
 relations:
-- - tigera:cni
+- - calico-enterprise:cni
   - kubernetes-control-plane:cni
-- - tigera:cni
+- - calico-enterprise:cni
   - kubernetes-worker:cni

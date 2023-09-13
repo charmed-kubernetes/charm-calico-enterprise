@@ -25,6 +25,8 @@ jobs:
     needs: 
       - lint-unit
     runs-on: self-hosted
+    env:
+      JUJU_MODEL: tigera
     timeout-minutes: 90
     steps:
       - name: Check out code
@@ -50,6 +52,7 @@ jobs:
         run: |-
           sudo snap install terraform --channel=latest/stable --classic
           sudo snap install yq --classic
+          juju add-model ${JUJU_MODEL}
           JUJU_CONTROLLER=$(juju controllers --format yaml | yq '.current-controller')
           JUJU_CONTROLLER_UUID=$(juju controllers --format yaml | yq ".controllers.${JUJU_CONTROLLER}.controller-uuid")
           VSPHERE_ENDPOINT=$(cat ~/.local/share/juju/clouds.yaml | yq -r '.clouds.vsphere.endpoint')
@@ -63,8 +66,12 @@ jobs:
             -var="vsphere_password=${VSPHERE_PASS}" \
             -var="vsphere_server=${VSPHERE_ENDPOINT}" \
             -var="vsphere_folder=${VSPHERE_FOLDER}" \
+            -var="juju_authorized_key=$(cat ~/.local/share/juju/ssh/juju_id_rsa.pub)" \
             -auto-approve
-            
+          for addr in $(terraform -chdir=tests/testing-environment/vmware output -json | yq '.k8s_addresses.value | to_entries | .[].value'); do
+            ssh ubuntu@$addr -i ~/.local/share/juju/ssh/juju_id_rsa -o "StrictHostKeyChecking no" -- hostname
+            juju add-machine -m ${JUJU_MODEL} ssh:ubuntu@$addr --public-key=~/.local/share/juju/ssh/juju_id_rsa.pub
+          done
       - name: Run test
         run: tox -e integration -- --basetemp=/home/ubuntu/pytest
       - name: Setup Debug Artifact Collection

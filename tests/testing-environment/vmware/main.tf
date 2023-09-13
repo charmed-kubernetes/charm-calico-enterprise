@@ -65,6 +65,7 @@ data "cloudinit_config" "calico_early" {
       tigera_registry_password = var.tigera_registry_password,
       calico_early_version     = var.calico_early_version,
       k8s_prefix               = "k8s-node"
+      juju_authorized_key      = var.juju_authorized_key
     })
   }
 }
@@ -85,6 +86,7 @@ data "cloudinit_config" "tor1" {
       switch_final_octet  = 23,
       peer_tor_as         = 65502,
       switch_backbone_net = "10.246.153"
+      juju_authorized_key = var.juju_authorized_key
     })
   }
 }
@@ -105,17 +107,13 @@ data "cloudinit_config" "tor2" {
       switch_final_octet  = 23,
       peer_tor_as         = 65501,
       switch_backbone_net = "10.246.153",
+      juju_authorized_key = var.juju_authorized_key
     })
   }
 }
 
 data "vsphere_resource_pool" "default" {
   name          = format("%s%s", data.vsphere_compute_cluster.cluster.name, "/Resources")
-  datacenter_id = data.vsphere_datacenter.datacenter.id
-}
-
-data "vsphere_host" "host" {
-  name          = "eyerok.internal"
   datacenter_id = data.vsphere_datacenter.datacenter.id
 }
 
@@ -178,7 +176,6 @@ resource "vsphere_virtual_machine" "tor1" {
   name                 = "tor1"
   resource_pool_id     = data.vsphere_compute_cluster.cluster.resource_pool_id
   datastore_id         = data.vsphere_datastore.datastore.id
-  host_system_id       = data.vsphere_host.host.id
   num_cpus             = 1
   num_cores_per_socket = 2
   memory               = 8192
@@ -222,7 +219,6 @@ resource "vsphere_virtual_machine" "tor2" {
   name                 = "tor2"
   resource_pool_id     = data.vsphere_compute_cluster.cluster.resource_pool_id
   datastore_id         = data.vsphere_datastore.datastore.id
-  host_system_id       = data.vsphere_host.host.id
   num_cpus             = 1
   num_cores_per_socket = 2
   memory               = 8192

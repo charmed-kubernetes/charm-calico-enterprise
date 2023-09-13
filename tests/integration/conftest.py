@@ -243,7 +243,6 @@ def kubectl_exec(kubectl):
     async def f(name: str, namespace: str, cmd: str, **kwds):
         shcmd = f'exec {name} -n {namespace} -- sh -c "{cmd}"'
         return await kubectl(*shlex.split(shcmd), **kwds)
-
     return f
 
 

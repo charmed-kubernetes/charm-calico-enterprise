@@ -18,12 +18,12 @@ packages:
 - jq
 users:
   - name: ubuntu
-    ssh_import_id:
-    - lp:pjds
     groups: [adm, audio, cdrom, dialout, floppy, video, plugdev, dip, netdev]
     plain_text_passwd: "ubuntu"
     shell: /bin/bash
-    lock_passwd: false
+    lock_passwd: true
+    ssh_authorized_keys:
+    - ${juju_authorized_key}
     sudo:
     - ALL=(ALL) NOPASSWD:ALL
 write_files:

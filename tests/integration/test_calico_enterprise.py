@@ -34,11 +34,11 @@ async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_
     charm = await ops_test.build_charm(".")
 
     overlays = [
+        "kubernetes-core",
         Path("tests/data/charm.yaml"),
     ]
 
     log.info("Rendering overlays...")
-    # TODO: Undo this
     bundle, *overlays = await ops_test.async_render_bundles(
         *overlays,
         charm=charm,
