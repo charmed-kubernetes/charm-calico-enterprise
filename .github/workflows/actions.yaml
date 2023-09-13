@@ -26,7 +26,7 @@ jobs:
       - lint-unit
     runs-on: self-hosted
     env:
-      JUJU_MODEL: tigera
+      JUJU_MODEL: calico-enterprise
     timeout-minutes: 90
     steps:
       - name: Check out code
