@@ -31,7 +31,7 @@ write_files:
     #!/bin/bash
     sudo apt-get update
     sudo apt-get install -y containerd
-    sudo ctr image pull --user "${tigera_registry_user}:${tigera_registry_password}" quay.io/tigera/cnx-node:v${calico_early_version}
+    sudo ctr image pull --user "${tigera_registry_secret}" quay.io/tigera/cnx-node:v${calico_early_version}
   path: /tmp/setup-env.sh
   permissions: "0744"
   owner: root:root

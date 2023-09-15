@@ -18,8 +18,16 @@ options:
     default: ""
     type: string
     description: |
-      License file converted into base64 following the command:
-        $ juju config tigera license="$(cat license | base64 -w0)"
+      LicenseKey should be a file, appiled as a bas64 string
+
+      file format:
+          kind:LicenseKey
+          apiVersion: projectcalico.org/v3
+          spec:
+            certificate: <content>
+            token: <content>
+
+      $ juju config calico-enterprise license="$(cat license | base64 -w0)"
   addons:
     default: False
     type: boolean

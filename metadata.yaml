@@ -26,15 +26,15 @@ peers:
   tigera:
     interface: tigera
 resources:
-  cnx-node-image:
-    type: file
-    filename: cnx-node-image.tar.gz
-    description: 'cnx-node resource tarball for amd64'
   calico-enterprise-manifest:
     type: file
     filename: tigera-installation.yaml
-    description: 'The Tigera manifest'
+    description: |-
+      The Tigera manifest
+      https://downloads.tigera.io/ee/v3.17.1/manifests/tigera-operator.yaml
   calico-crd-manifest:
     type: file
     filename: tigera-crds.yaml
-    description: 'The Tigera CRDs manifest'
+    description: |-
+      The Tigera CRDs manifest
+      https://downloads.tigera.io/ee/v3.17.1/manifests/custom-resources.yaml

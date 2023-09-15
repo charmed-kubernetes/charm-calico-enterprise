@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import os
@@ -212,8 +214,13 @@ def kubectl(ops_test, kubeconfig):
 
 @pytest.fixture(scope="module")
 def tigera_ee_license() -> str:
-    """Fetch the Tigera EE license from the environment."""
+    """Fetch the Tigera EE license from the environment as either bare string or base64 encoded."""
     if license := os.environ.get("CHARM_TIGERA_EE_LICNESE"):
+        try:
+            base64.b64decode(license)
+        except binascii.Error:
+            # missing the b64 encoded, add that here
+            license = base64.b64encode(license).decode()
         return license
     raise KeyError("Tigera License not found")
 

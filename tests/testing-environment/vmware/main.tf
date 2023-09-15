@@ -61,8 +61,7 @@ data "cloudinit_config" "calico_early" {
       mgmt_network             = "10.246.153",
       node_final_octet         = 12
       nodes                    = range(0, 5),
-      tigera_registry_user     = var.tigera_registry_user,
-      tigera_registry_password = var.tigera_registry_password,
+      tigera_registry_secret   = var.tigera_registry_secret,
       calico_early_version     = var.calico_early_version,
       k8s_prefix               = "k8s-node"
       juju_authorized_key      = var.juju_authorized_key

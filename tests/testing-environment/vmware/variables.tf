@@ -26,17 +26,12 @@ variable "juju_authorized_key" {
     type = string
 }
 
-variable "tigera_registry_user" {
+variable "tigera_registry_secret" {
+    description = "$username:$password to use when pulling the tigera images from the upstream repos."
     type = string
-    default = "VALUE NOT SET"
     sensitive = true
 }
 
-variable "tigera_registry_password" {
-    type = string
-    default = "VALUE NOT SET"
-    sensitive = true
-}
 
 variable "calico_early_version" {
     type = string
