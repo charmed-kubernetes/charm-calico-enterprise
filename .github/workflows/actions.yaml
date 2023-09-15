@@ -79,6 +79,7 @@ jobs:
             -var="vsphere_server=${VSPHERE_ENDPOINT}" \
             -var="vsphere_folder=${VSPHERE_FOLDER}" \
             -var="juju_authorized_key=$(cat ~/.local/share/juju/ssh/juju_id_rsa.pub)" \
+            -var="tigera_registry_secret=${CHARM_TIGERA_EE_REG_SECRET}" \
             -auto-approve
           for addr in $(terraform -chdir=tests/testing-environment/vmware output -json | yq '.k8s_addresses.value | to_entries | .[].value'); do
             ssh ubuntu@$addr -i ~/.local/share/juju/ssh/juju_id_rsa -o "StrictHostKeyChecking no" -- hostname
