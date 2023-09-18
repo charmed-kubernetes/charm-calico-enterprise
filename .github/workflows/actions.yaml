@@ -56,10 +56,13 @@ jobs:
         run: |-
           sudo snap install terraform --channel=latest/stable --classic
           sudo snap install yq --classic
+          sudo apt install sshuttle
       - name: Prepare for Terraform Deployment by collecting Environment
         run: |-
-          echo "JUJU_CONTROLLER=$(juju controllers --format yaml | yq .current-controller)" >> "$GITHUB_ENV"
-          echo "JUJU_CONTROLLER_UUID=$(juju controllers --format yaml | yq .controllers.${JUJU_CONTROLLER}.controller-uuid)" >> "$GITHUB_ENV"
+          JUJU_CONTROLLER=$(juju controllers --format yaml | yq .current-controller)
+          JUJU_CONTROLLER_UUID=$(juju controllers --format yaml | yq .controllers.${JUJU_CONTROLLER}.controller-uuid)
+          echo "JUJU_CONTROLLER=${JUJU_CONTROLLER}" >> "$GITHUB_ENV"
+          echo "JUJU_CONTROLLER_UUID=${JUJU_CONTROLLER_UUID}" >> "$GITHUB_ENV"
           echo "VSPHERE_ENDPOINT=$(cat ~/.local/share/juju/clouds.yaml | yq -r .clouds.vsphere.endpoint)" >> "$GITHUB_ENV"
           echo "VSPHERE_USER=$(cat ~/.local/share/juju/credentials.yaml | yq -r .credentials.vsphere.vsphere-crew.user)" >> "$GITHUB_ENV"
           echo "VSPHERE_PASS=$(cat ~/.local/share/juju/credentials.yaml | yq -r .credentials.vsphere.vsphere-crew.password)" >> "$GITHUB_ENV"
@@ -72,18 +75,27 @@ jobs:
           sudo snap install terraform --channel=latest/stable --classic
           sudo snap install yq --classic
           juju add-model ${JUJU_MODEL}
+          PRIVATE_KEY=/home/ubuntu/.local/share/juju/ssh/juju_id_rsa
+          PUBLIC_KEY=/home/ubuntu/.local/share/juju/ssh/juju_id_rsa.pub
+          CONTROLLER=$(juju status -m controller --format=json | yq .machines.0.dns-name)
           terraform -chdir=tests/testing-environment/vmware init
           terraform -chdir=tests/testing-environment/vmware apply \
             -var="vsphere_user=${VSPHERE_USER}" \
             -var="vsphere_password=${VSPHERE_PASS}" \
             -var="vsphere_server=${VSPHERE_ENDPOINT}" \
             -var="vsphere_folder=${VSPHERE_FOLDER}" \
-            -var="juju_authorized_key=$(cat ~/.local/share/juju/ssh/juju_id_rsa.pub)" \
+            -var="juju_authorized_key=$(cat ${PUBLIC_KEY})" \
             -var="tigera_registry_secret=${CHARM_TIGERA_EE_REG_SECRET}" \
             -auto-approve
+
+          # tunnel juju connections through the controller, by way of TOR1
+          TOR1=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.tor1.value')
+          juju ssh -m controller 0 -- "sudo ip route add 10.30.30.0/24 via $TOR1"
+          sshuttle -r ubuntu@${CONTROLLER} 10.30.30.0/24 --ssh-cmd "ssh -i ${PRIVATE_KEY}" -D
+          
           for addr in $(terraform -chdir=tests/testing-environment/vmware output -json | yq '.k8s_addresses.value | to_entries | .[].value'); do
-            ssh ubuntu@$addr -i ~/.local/share/juju/ssh/juju_id_rsa -o "StrictHostKeyChecking no" -- hostname
-            juju add-machine -m ${JUJU_MODEL} ssh:ubuntu@$addr --public-key=~/.local/share/juju/ssh/juju_id_rsa.pub
+            STABLE_IP$(ssh ubuntu@$addr -i ${PRIVATE_KEY} -o "StrictHostKeyChecking no" -- 'ip -j -4 a | jq -r .[0].addr_info[1].local')
+            juju add-machine -m ${JUJU_MODEL} ssh:ubuntu@${STABLE_IP} --public-key=${PUBLIC_KEY}
           done
       - name: Run test
         run: tox -e integration -- --basetemp=/home/ubuntu/pytest

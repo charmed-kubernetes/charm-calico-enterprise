@@ -100,7 +100,7 @@ data "cloudinit_config" "tor2" {
     content = templatefile("${path.module}/templates/sw-cloud-init.tpl", {
       switch              = 1,
       switch_asn          = 65502,
-      switch_network      = "10.246.154",
+      switch_network      = "10.246.155",
       stableip_asn        = 64512,
       stable_ip           = "10.30.30.202",
       switch_final_octet  = 23,

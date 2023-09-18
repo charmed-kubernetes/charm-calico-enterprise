@@ -178,6 +178,11 @@ write_files:
     import subprocess
     import json
 
+    def nic_addresses(ip_json, ifname):
+        for ip in ip_json:
+            if ip['ifname'] == ifname:
+                for ifc in ip['addr_info']:
+                    yield f'{ifc["local"]}/{ifc["prefixlen"]}'
 
     def reconfigure_netplan():
         netplan = None
@@ -188,18 +193,21 @@ write_files:
         ip_json = json.loads(subprocess.check_output("ip -j -4 a".split()).decode('utf-8'))
         netplan['network']['ethernets'].update({
                 "ens192": {
+                    "addresses": list(nic_addresses(ip_json, "ens192")),
                     "routes": [{
                         "to": "default",
                         "via": "${switch_network_sw1}"
                     }],
-                    "addresses": [[ip['addr_info'][0]['local'] for ip in ip_json if ip['ifname'] == "ens192"][0] + "/24"]
                 },
                 "ens224": {
+                    "addresses": list(nic_addresses(ip_json, "ens224")),
                     "routes": [{
                         "to": "0.0.0.0/1",
                         "via": "${switch_network_sw2}"
+                    },{
+                        "to": "128.0.0.0/1",
+                        "via": "${switch_network_sw2}"
                     }],
-                    "addresses": [[ip['addr_info'][0]['local'] for ip in ip_json if ip['ifname'] == "ens224"][0] + "/24"]
                 }
             })
         with open('/etc/netplan/50-cloud-init.yaml', 'w') as fh:
@@ -210,7 +218,7 @@ write_files:
 
     if __name__ == "__main__":
         reconfigure_netplan()
-  path: /tmp/reconfigre_netplan.py
+  path: /tmp/reconfigure_netplan.py
   permissions: '744'
   owner: root:root
 - content: |
@@ -252,7 +260,7 @@ output: {all: '| tee -a /var/log/cloud-init-output.log'}
 runcmd:
 # - ["/tmp/configure_gateway.py", "--cidr", "10.10.10.0/24", "--gateway", "10.10.10.3"]
 - [/tmp/setup-env.sh]
-- [/tmp/reconfigre_netplan.py]
+- [/tmp/reconfigure_netplan.py]
 - [/tmp/render_calico_early.py]
 - sudo systemctl start calico-early
 - sudo systemctl start calico-early-wait
