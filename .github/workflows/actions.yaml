@@ -29,8 +29,8 @@ jobs:
       JUJU_MODEL: calico-enterprise
       CHARM_TIGERA_EE_LICENSE: ${{ secrets.CHARM_TIGERA_EE_LICENSE }}
       CHARM_TIGERA_EE_REG_SECRET: ${{ secrets.CHARM_TIGERA_EE_REG_SECRET }}
-      JUJU_CREDENTIALS_YAML_CONTENT: ${{ secrets.CREDENTIALS_YAML }}
-      JUJU_CLOUDS_YAML_CONTENT: ${{ secrets.CLOUDS_YAML }}
+      CREDENTIALS_YAML_CONTENT: ${{ secrets.CREDENTIALS_YAML }}
+      CLOUDS_YAML_CONTENT: ${{ secrets.CLOUDS_YAML }}
 
 
     timeout-minutes: 90
@@ -57,29 +57,39 @@ jobs:
 
       - name: Apply cloud credentials
         run: |-
-          JUJU_DIR=${HOME}/.local/share/juju
-          JUJU_CREDENTIALS_YAML=$JUJU_DIR/credentials.yaml
-          JUJU_CLOUDS_YAML=$JUJU_DIR/clouds.yaml
-          mkdir -p $JUJU_DIR
-          if [ -z "$JUJU_CREDENTIALS_YAML_CONTENT" ]; then 
+          CLOUD_CREDS=${HOME}/.cloud-creds
+          CREDENTIALS_YAML=$CLOUD_CREDS/credentials.yaml
+          CLOUDS_YAML=$CLOUD_CREDS/clouds.yaml
+          mkdir -p $CLOUD_CREDS
+          if [ -z "$CREDENTIALS_YAML_CONTENT" ]; then 
             >&2 echo "No cloud credentials available"
             exit -1
           fi
-          if [ -z "$JUJU_CLOUDS_YAML_CONTENT" ]; then 
+          if [ -z "$CLOUDS_YAML_CONTENT" ]; then 
             >&2 echo "No cloud yaml available"
             exit -1
           fi
-          echo "${JUJU_CREDENTIALS_YAML_CONTENT}" | base64 -d > $JUJU_CREDENTIALS_YAML
-          echo "${JUJU_CLOUDS_YAML_CONTENT}" | base64 -d > $JUJU_CLOUDS_YAML
-          VSPHERE_USER=$(cat $JUJU_CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.user)
-          VSPHERE_ENDPOINT=$(cat $JUJU_CLOUDS_YAML | yq -r .clouds.vsphere.endpoint)
-          VSPHERE_PASS=$(cat $JUJU_CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.password)
-          VSPHERE_FOLDER=$(cat $JUJU_CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.vmfolder)
+          echo "${CREDENTIALS_YAML_CONTENT}" | base64 -d > $CREDENTIALS_YAML
+          echo "${CLOUDS_YAML_CONTENT}" | base64 -d > $CLOUDS_YAML
+          VSPHERE_USER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.user)
+          VSPHERE_ENDPOINT=$(cat $CLOUDS_YAML | yq -r .clouds.vsphere.endpoint)
+          VSPHERE_PASS=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.password)
+          VSPHERE_FOLDER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.vmfolder)
           VSPHERE_FOLDER="${VSPHERE_FOLDER}/Calico Enterprise ($GITHUB_SHA)"
-          
-          echo "JUJU_DIR=${JUJU_DIR}" >> "$GITHUB_ENV"
-          echo "JUJU_CREDENTIALS_YAML=$JUJU_CREDENTIALS_YAML" >> "$GITHUB_ENV"
-          echo "JUJU_CLOUDS_YAML=$JUJU_CLOUDS_YAML" >> "$GITHUB_ENV"
+
+          if [ -z "$VSPHERE_ENDPOINT" ]; then 
+            >&2 echo "No vsphere endpoint detected"
+            exit -1
+          fi
+          if [ -z "$VSPHERE_USER" ]; then 
+            >&2 echo "No vsphere user detected"
+            exit -1
+          fi
+          if [ -z "$VSPHERE_PASS" ]; then 
+            >&2 echo "No vsphere password detected"
+            exit -1
+          fi
+
           echo "VSPHERE_ENDPOINT=$VSPHERE_ENDPOINT" >> "$GITHUB_ENV"
           echo "VSPHERE_USER=$VSPHERE_USER" >> "$GITHUB_ENV"
           echo "VSPHERE_PASS=$VSPHERE_PASS" >> "$GITHUB_ENV"
@@ -158,10 +168,14 @@ jobs:
         with:
           name: test-run-artifacts
           path: tmp
-      - name: Terraform Teardown
+      - name: Juju Teardown
         if: ${{ always() }}
         run: |
           juju destroy-model ${JUJU_MODEL} --force --destroy-storage
+
+      - name: Terraform Teardown
+        if: ${{ always() }}
+        run: |
           terraform -chdir=tests/testing-environment/vmware destroy \
             -var="vsphere_user=${VSPHERE_USER}" \
             -var="vsphere_password=${VSPHERE_PASS}" \
