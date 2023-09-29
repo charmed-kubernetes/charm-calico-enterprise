@@ -45,6 +45,18 @@ data "vsphere_datastore" "datastore" {
   datacenter_id = data.vsphere_datacenter.datacenter.id
 }
 
+data "cloudinit_config" "juju_controller" {
+  gzip          = false
+  base64_encode = true
+  part {
+    filename     = "cloud-config.yaml"
+    content_type = "text/cloud-config"
+    content = templatefile("${path.module}/templates/juju_controller.tpl", {
+      juju_authorized_key      = var.juju_authorized_key
+    })
+  }
+}
+
 data "cloudinit_config" "calico_early" {
   gzip          = false
   base64_encode = true
@@ -127,6 +139,45 @@ resource "vsphere_folder" "folder" {
   datacenter_id        = data.vsphere_datacenter.datacenter.id
 }
 
+resource "vsphere_virtual_machine" "juju-controller" {
+  name                 = "juju-controller"
+  resource_pool_id     = data.vsphere_compute_cluster.cluster.resource_pool_id
+  datastore_id         = data.vsphere_datastore.datastore.id
+  num_cpus             = 1
+  num_cores_per_socket = 2
+  memory               = 8192
+  guest_id             = data.vsphere_virtual_machine.template.guest_id
+  scsi_type            = data.vsphere_virtual_machine.template.scsi_type
+  folder               = vsphere_folder.folder.path
+  vapp {
+    properties = {
+      hostname  = "juju-controller"
+      user-data = data.cloudinit_config.juju_controller.rendered
+    }
+  }
+  network_interface {
+    network_id = data.vsphere_network.vlan_2764.id
+  }
+  disk {
+    label       = "sda"
+    size        = 100
+    unit_number = 0
+    thin_provisioned = data.vsphere_virtual_machine.template.disks.0.thin_provisioned
+  }
+  clone {
+    template_uuid = data.vsphere_virtual_machine.template.id
+  }
+  cdrom {
+    client_device = true
+  }
+  extra_config = {
+    "guestinfo.metadata"          = data.cloudinit_config.juju_controller.rendered
+    "guestinfo.metadata.encoding" = "base64"
+    "guestinfo.userdata"          = data.cloudinit_config.juju_controller.rendered
+    "guestinfo.userdata.encoding" = "base64"
+  }
+}
+
 resource "vsphere_virtual_machine" "k8s_nodes" {
   count                = 5
   name                 = "k8s-test-${count.index}"
@@ -144,6 +195,9 @@ resource "vsphere_virtual_machine" "k8s_nodes" {
       hostname  = "k8s-node-${count.index}"
       user-data = data.cloudinit_config.calico_early.rendered
     }
+  }
+  network_interface {
+    network_id = data.vsphere_network.vlan_2763.id
   }
   network_interface {
     network_id = data.vsphere_network.vlan_2764.id

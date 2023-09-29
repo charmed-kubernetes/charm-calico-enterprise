@@ -59,7 +59,9 @@ async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_
     print(juju_cmd)
 
     await ops_test.juju(*shlex.split(juju_cmd), check=True, fail_msg="Bundle deploy failed")
-    await ops_test.model.block_until(lambda: "calico-enterprise" in ops_test.model.applications, timeout=60)
+    await ops_test.model.block_until(
+        lambda: "calico-enterprise" in ops_test.model.applications, timeout=60
+    )
 
     await ops_test.model.wait_for_idle(status="active", timeout=60 * 60)
 

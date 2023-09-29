@@ -1,19 +1,6 @@
 #cloud-config
 package_update: true
 package_upgrade: true
-# network:
-#   version: 2
-#   ethernets:
-#       eth0:
-#           dhcp4: true
-#           routes:
-#           - to: default
-#             via: {{switch_network_sw1}}
-#       eth1:
-#           dhcp4: true
-#           routes:
-#           - to: 0.0.0.0/0
-#             via: {{switch_network_sw2}}
 packages:
 - jq
 users:
@@ -41,8 +28,8 @@ write_files:
     HTTPS_PROXY="http://squid.internal:3128"
     http_proxy="http://squid.internal:3128"
     https_proxy="http://squid.internal:3128"
-    NO_PROXY="localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.0.8.0/24,10.152.183.0/24,10.246.153.0/24,10.246.154.0/24"
-    no_proxy="localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.0.8.0/24,10.152.183.0/24,10.246.153.0/24,10.246.154.0/24"
+    NO_PROXY="localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.0.8.0/24,10.152.183.0/24,10.246.153.0/24,10.246.154.0/24,10.246.155.0/24"
+    no_proxy="localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.0.8.0/24,10.152.183.0/24,10.246.153.0/24,10.246.154.0/24,10.246.155.0/24"
   path: /etc/environment
   permissions: "0644"
   owner: root:root
@@ -174,47 +161,60 @@ write_files:
   permissions: '644'
 - content: |
     #!/bin/env python3
-    import yaml
+    import shlex
     import subprocess
-    import json
+
+    import yaml
+
+
+    def get_nics():
+        links = subprocess.check_output(shlex.split("ip -j link show"))
+        return yaml.safe_load(links)
+
 
     def nic_addresses(ip_json, ifname):
         for ip in ip_json:
-            if ip['ifname'] == ifname:
-                for ifc in ip['addr_info']:
+            if ip["ifname"] == ifname:
+                for ifc in ip["addr_info"]:
                     yield f'{ifc["local"]}/{ifc["prefixlen"]}'
+
 
     def reconfigure_netplan():
         netplan = None
-        subprocess.check_call("sudo dhclient".split())
+        links = get_nics()
+        for nic in links[2:]:  # update nic2 and nic3
+            ifname = nic["ifname"]
+            subprocess.check_call(shlex.split(f"sudo dhclient -r {ifname}"))
+            subprocess.check_call(shlex.split(f"sudo dhclient {ifname}"))
 
-        with open('/etc/netplan/50-cloud-init.yaml', 'r') as fh:
+        with open("/etc/netplan/50-cloud-init.yaml", "r") as fh:
             netplan = yaml.safe_load(fh.read())
-        ip_json = json.loads(subprocess.check_output("ip -j -4 a".split()).decode('utf-8'))
-        netplan['network']['ethernets'].update({
-                "ens192": {
-                    "addresses": list(nic_addresses(ip_json, "ens192")),
-                    "routes": [{
-                        "to": "default",
-                        "via": "${switch_network_sw1}"
-                    }],
+        ip_json = yaml.safe_load(subprocess.check_output("ip -j -4 a".split()).decode("utf-8"))
+        netplan["network"]["ethernets"].update(
+            {
+                links[2]["ifname"]: {
+                    "addresses": list(nic_addresses(ip_json, links[2]["ifname"])),
+                    "set-name": links[2]["ifname"],
+                    "match": {"macaddress": links[2]["address"]},
+                    "routes": [{"to": "default", "via": "10.246.154.12"}],
                 },
-                "ens224": {
-                    "addresses": list(nic_addresses(ip_json, "ens224")),
-                    "routes": [{
-                        "to": "0.0.0.0/1",
-                        "via": "${switch_network_sw2}"
-                    },{
-                        "to": "128.0.0.0/1",
-                        "via": "${switch_network_sw2}"
-                    }],
-                }
-            })
-        with open('/etc/netplan/50-cloud-init.yaml', 'w') as fh:
+                links[3]["ifname"]: {
+                    "addresses": list(nic_addresses(ip_json, links[3]["ifname"])),
+                    "set-name": links[3]["ifname"],
+                    "match": {"macaddress": links[3]["address"]},
+                    "routes": [
+                        {"to": "0.0.0.0/1", "via": "10.246.155.158"},
+                        {"to": "128.0.0.0/1", "via": "10.246.155.158"},
+                    ],
+                },
+            }
+        )
+        with open("/etc/netplan/50-cloud-init.yaml", "w") as fh:
             fh.write(yaml.dump(netplan))
         print("Wrote updated netplan!")
 
         subprocess.call("sudo netplan apply".split())
+
 
     if __name__ == "__main__":
         reconfigure_netplan()
@@ -223,12 +223,19 @@ write_files:
   owner: root:root
 - content: |
     #!/bin/env python3
-    import jinja2
-    import json
     import argparse
     import subprocess
+    import time
+
+    import jinja2
+    import yaml
 
     parser = argparse.ArgumentParser("Calico Early Renderer")
+
+
+    def get_ips():
+        return yaml.safe_load(subprocess.check_output("ip -j -4 a".split()))
+
 
     def render_calico_early(args):
         calico_early_template = None
@@ -236,19 +243,26 @@ write_files:
         with open("/tmp/calico_early.tpl", "r") as fh:
             calico_early_template = jinja2.Template(fh.read())
 
-        ip_json = json.loads(subprocess.check_output("ip -j -4 a".split()).decode("utf-8"))
-        ip_ens192 = [[ip["addr_info"][0]["local"] for ip in ip_json if ip["ifname"] == "ens192"][0]][0]
-        ip_ens224 = [[ip["addr_info"][0]["local"] for ip in ip_json if ip["ifname"] == "ens224"][0]][0]
-        hostname = json.loads(subprocess.check_output("hostnamectl status --json short".split()).decode("utf-8"))['StaticHostname']
+        ips = get_ips()
+        if len(ips) < 4:
+            time.sleep(5)
+            ips = get_ips()
+            print("Waiting for all nics")
+
+        ip_2, ip_3 = [ips[nic]["addr_info"][0]["local"] for nic in (2, 3)]
+        hostname = yaml.safe_load(subprocess.check_output("hostnamectl status --json short".split()))[
+            "StaticHostname"
+        ]
         node_info = {
-            f"node{hostname.split('-')[2]}_interface1_addr": ip_ens192,
-            f"node{hostname.split('-')[2]}_interface2_addr": ip_ens224,
+            f"node{hostname.split('-')[2]}_interface1_addr": ip_2,
+            f"node{hostname.split('-')[2]}_interface2_addr": ip_3,
         }
 
         with open("/calico-early/cfg.yaml", "w") as fh:
             fh.write(calico_early_template.render(**node_info))
 
         print("Rendered calico early")
+
 
     if __name__ == "__main__":
         args = parser.parse_args()
@@ -264,8 +278,8 @@ runcmd:
 - [/tmp/render_calico_early.py]
 - sudo systemctl start calico-early
 - sudo systemctl start calico-early-wait
-- iptables -t nat -A POSTROUTING -s 192.168.0.0/16 ! -d 10.30.30.0/24 -o eth0 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens192") | .addr_info[0].local')
-- iptables -t nat -A POSTROUTING -s 10.30.30.0/24 ! -d 10.30.30.0/24 -o eth0 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens192") | .addr_info[0].local')
+- iptables -t nat -A POSTROUTING -s 10.30.30.0/24 ! -d 10.30.30.0/24 -o ens224 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens224") | .addr_info[0].local')
+- iptables -t nat -A POSTROUTING -s 10.30.30.0/24 ! -d 10.30.30.0/24 -o ens256 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens256") | .addr_info[0].local')
 # power_state:
 #   delay: 0
 #   mode: reboot

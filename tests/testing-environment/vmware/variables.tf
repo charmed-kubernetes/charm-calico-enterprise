@@ -32,7 +32,6 @@ variable "tigera_registry_secret" {
     sensitive = true
 }
 
-
 variable "calico_early_version" {
     type = string
     default = "3.17.1"

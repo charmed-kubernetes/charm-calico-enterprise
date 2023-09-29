@@ -29,6 +29,8 @@ jobs:
       JUJU_MODEL: calico-enterprise
       CHARM_TIGERA_EE_LICNESE: ${{ secrets.CHARM_TIGERA_EE_LICNESE }}
       CHARM_TIGERA_EE_REG_SECRET: ${{ secrets.CHARM_TIGERA_EE_REG_SECRET }}
+      JUJU_CREDENTIALS_YAML_CONTENT: ${{ secrets.CREDENTIALS_YAML }}
+      JUJU_CLOUDS_YAML_CONTENT: ${{ secrets.CLOUDS_YAML }}
 
 
     timeout-minutes: 90
@@ -39,45 +41,52 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - name: Setup operator environment
-        uses: charmed-kubernetes/actions-operator@main
-        with:
-          provider: vsphere
-          juju-channel: 3.1/stable
-          credentials-yaml: ${{ secrets.CREDENTIALS_YAML }}
-          clouds-yaml: ${{ secrets.CLOUDS_YAML }}
-          bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
-          bootstrap-options: >-
-            ${{ secrets.JAMMY_BOOTSTRAP_OPTIONS }}
-            --model-default datastore=vsanDatastore
-            --model-default primary-network=VLAN_2763
-            --model-default force-vm-hardware-version=17
-      - name: Install Terraform
+      - name: Install Terraform and Tools
         run: |-
           sudo snap install terraform --channel=latest/stable --classic
           sudo snap install yq --classic
-          sudo apt install sshuttle
-      - name: Prepare for Terraform Deployment by collecting Environment
+          sudo apt install sshuttle pv
+      - name: Generate SSH Keys
         run: |-
-          JUJU_CONTROLLER=$(juju controllers --format yaml | yq .current-controller)
-          JUJU_CONTROLLER_UUID=$(juju controllers --format yaml | yq .controllers.${JUJU_CONTROLLER}.controller-uuid)
-          echo "JUJU_CONTROLLER=${JUJU_CONTROLLER}" >> "$GITHUB_ENV"
-          echo "JUJU_CONTROLLER_UUID=${JUJU_CONTROLLER_UUID}" >> "$GITHUB_ENV"
-          echo "VSPHERE_ENDPOINT=$(cat ~/.local/share/juju/clouds.yaml | yq -r .clouds.vsphere.endpoint)" >> "$GITHUB_ENV"
-          echo "VSPHERE_USER=$(cat ~/.local/share/juju/credentials.yaml | yq -r .credentials.vsphere.vsphere-crew.user)" >> "$GITHUB_ENV"
-          echo "VSPHERE_PASS=$(cat ~/.local/share/juju/credentials.yaml | yq -r .credentials.vsphere.vsphere-crew.password)" >> "$GITHUB_ENV"
-          VSPHERE_FOLDER=$(cat ~/.local/share/juju/credentials.yaml | yq -r .credentials.vsphere.vsphere-crew.vmfolder)
-          VSPHERE_FOLDER="${VSPHERE_FOLDER}/Juju Controller (${JUJU_CONTROLLER_UUID})/manual-machines"
+          ssh-keygen -b 2048 -t rsa -N "" -f ${HOME}/.ssh/id_rsa
+          PRIVATE_KEY=${HOME}/.ssh/id_rsa
+          PUBLIC_KEY=${HOME}/.ssh/id_rsa.pub
+
+          echo "PRIVATE_KEY=${PRIVATE_KEY}" >> "$GITHUB_ENV"
+          echo "PUBLIC_KEY=${PUBLIC_KEY}" >> "$GITHUB_ENV"
+
+      - name: Apply cloud credentials
+        run: |-
+          JUJU_DIR=${HOME}/.local/share/juju
+          JUJU_CREDENTIALS_YAML=$JUJU_DIR/credentials.yaml
+          JUJU_CLOUDS_YAML=$JUJU_DIR/clouds.yaml
+          mkdir -p $JUJU_DIR
+          if [ -z "$JUJU_CREDENTIALS_YAML_CONTENT" ]; then 
+            >&2 echo "No cloud credentials available"
+            exit -1
+          fi
+          if [ -z "$JUJU_CLOUDS_YAML_CONTENT" ]; then 
+            >&2 echo "No cloud yaml available"
+            exit -1
+          fi
+          echo "${JUJU_CREDENTIALS_YAML_CONTENT}" | base64 -d > $JUJU_CREDENTIALS_YAML
+          echo "${JUJU_CLOUDS_YAML_CONTENT}" | base64 -d > $JUJU_CLOUDS_YAML
+          VSPHERE_USER=$(cat $JUJU_CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.user)
+          VSPHERE_ENDPOINT=$(cat $JUJU_CLOUDS_YAML | yq -r .clouds.vsphere.endpoint)
+          VSPHERE_PASS=$(cat $JUJU_CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.password)
+          VSPHERE_FOLDER=$(cat $JUJU_CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.vmfolder)
+          VSPHERE_FOLDER="${VSPHERE_FOLDER}/Calico Enterprise ($GITHUB_SHA)"
+          
+          echo "JUJU_DIR=${JUJU_DIR}" >> "$GITHUB_ENV"
+          echo "JUJU_CREDENTIALS_YAML=$JUJU_CREDENTIALS_YAML" >> "$GITHUB_ENV"
+          echo "JUJU_CLOUDS_YAML=$JUJU_CLOUDS_YAML" >> "$GITHUB_ENV"
+          echo "VSPHERE_ENDPOINT=$VSPHERE_ENDPOINT" >> "$GITHUB_ENV"
+          echo "VSPHERE_USER=$VSPHERE_USER" >> "$GITHUB_ENV"
+          echo "VSPHERE_PASS=$VSPHERE_PASS" >> "$GITHUB_ENV"
           echo "VSPHERE_FOLDER=$VSPHERE_FOLDER" >> "$GITHUB_ENV"
 
-      - name: Terraform Apply DualTor Machine Infra
+      - name: Terraform Create Cloud
         run: |-
-          sudo snap install terraform --channel=latest/stable --classic
-          sudo snap install yq --classic
-          juju add-model ${JUJU_MODEL}
-          PRIVATE_KEY=/home/ubuntu/.local/share/juju/ssh/juju_id_rsa
-          PUBLIC_KEY=/home/ubuntu/.local/share/juju/ssh/juju_id_rsa.pub
-          CONTROLLER=$(juju status -m controller --format=json | yq .machines.0.dns-name)
           terraform -chdir=tests/testing-environment/vmware init
           terraform -chdir=tests/testing-environment/vmware apply \
             -var="vsphere_user=${VSPHERE_USER}" \
@@ -87,15 +96,42 @@ jobs:
             -var="juju_authorized_key=$(cat ${PUBLIC_KEY})" \
             -var="tigera_registry_secret=${CHARM_TIGERA_EE_REG_SECRET}" \
             -auto-approve
+          echo "Wait for Machines to fully cloud-init..."
+          TOR1_IP=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.tor1.value')
+          TOR2_IP=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.tor2.value')
+          K8S_IPS=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.k8s_addresses.value | to_entries | .[].value')
+          CONTROLLER_IP=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.controller.value')
+          MANUAL_CLOUD_YAML=$(cat << EOF | base64 -w0
+          clouds:
+            manual-cloud:
+              type: manual
+              endpoint: ubuntu@${CONTROLLER_IP}
+          EOF
+          )
+          ssh ubuntu@$CONTROLLER_IP -o "StrictHostKeyChecking no" -- 'hostname'
 
-          # tunnel juju connections through the controller, by way of TOR1
-          TOR1=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.tor1.value')
-          juju ssh -m controller 0 -- "sudo ip route add 10.30.30.0/24 via $TOR1"
-          sshuttle -r ubuntu@${CONTROLLER} 10.30.30.0/24 --ssh-cmd "ssh -i ${PRIVATE_KEY}" -D
-          
-          for addr in $(terraform -chdir=tests/testing-environment/vmware output -json | yq '.k8s_addresses.value | to_entries | .[].value'); do
-            STABLE_IP$(ssh ubuntu@$addr -i ${PRIVATE_KEY} -o "StrictHostKeyChecking no" -- 'ip -j -4 a | jq -r .[0].addr_info[1].local')
-            juju add-machine -m ${JUJU_MODEL} ssh:ubuntu@${STABLE_IP} --public-key=${PUBLIC_KEY}
+          echo "TOR1_IP=$TOR1_IP" >> "$GITHUB_ENV"
+          echo "TOR2_IP=$TOR2_IP" >> "$GITHUB_ENV"
+          echo "K8S_IPS=$K8S_IPS" >> "$GITHUB_ENV"
+          echo "CONTROLLER_IP=$CONTROLLER_IP" >> "$GITHUB_ENV"
+          echo "MANUAL_CLOUD_YAML=$MANUAL_CLOUD_YAML" >> "$GITHUB_ENV"
+
+      - name: Setup operator environment
+        uses: charmed-kubernetes/actions-operator@main
+        with:
+          provider: manual-cloud
+          juju-channel: 3.1/stable
+          credentials-yaml: ${{ secrets.CREDENTIALS_YAML }}
+          clouds-yaml: ${{ env.MANUAL_CLOUD_YAML }}
+          bootstrap-constraints: ""
+          bootstrap-options: ""
+
+      - name: Terraform Apply DualTor Machine Infra
+        run: |-
+          juju add-model ${JUJU_MODEL}
+          for addr in ${K8S_IPS}; do
+            ssh ubuntu@$addr -o "StrictHostKeyChecking no" -- 'hostname'
+            juju add-machine -m ${JUJU_MODEL} ssh:ubuntu@$addr
           done
       - name: Run test
         run: tox -e integration -- --basetemp=/home/ubuntu/pytest
