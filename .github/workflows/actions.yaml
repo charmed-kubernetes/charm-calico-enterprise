@@ -27,7 +27,7 @@ jobs:
     runs-on: self-hosted
     env:
       JUJU_MODEL: calico-enterprise
-      CHARM_TIGERA_EE_LICNESE: ${{ secrets.CHARM_TIGERA_EE_LICNESE }}
+      CHARM_TIGERA_EE_LICENSE: ${{ secrets.CHARM_TIGERA_EE_LICENSE }}
       CHARM_TIGERA_EE_REG_SECRET: ${{ secrets.CHARM_TIGERA_EE_REG_SECRET }}
       JUJU_CREDENTIALS_YAML_CONTENT: ${{ secrets.CREDENTIALS_YAML }}
       JUJU_CLOUDS_YAML_CONTENT: ${{ secrets.CLOUDS_YAML }}
@@ -45,7 +45,7 @@ jobs:
         run: |-
           sudo snap install terraform --channel=latest/stable --classic
           sudo snap install yq --classic
-          sudo apt install sshuttle pv
+          sudo apt install sshuttle -y
       - name: Generate SSH Keys
         run: |-
           ssh-keygen -b 2048 -t rsa -N "" -f ${HOME}/.ssh/id_rsa
@@ -129,10 +129,14 @@ jobs:
       - name: Terraform Apply DualTor Machine Infra
         run: |-
           juju add-model ${JUJU_MODEL}
+          juju add-space bgp
+          juju add-space mgmt
           for addr in ${K8S_IPS}; do
             ssh ubuntu@$addr -o "StrictHostKeyChecking no" -- 'hostname'
             juju add-machine -m ${JUJU_MODEL} ssh:ubuntu@$addr
           done
+          juju move-to-space bgp 10.30.30.12/32 10.30.30.13/32 10.30.30.15/32 10.30.30.16/32 10.30.30.17/32
+          juju move-to-space mgmt 10.246.153.0/24
       - name: Run test
         run: tox -e integration -- --basetemp=/home/ubuntu/pytest
       - name: Setup Debug Artifact Collection
@@ -163,5 +167,6 @@ jobs:
             -var="vsphere_password=${VSPHERE_PASS}" \
             -var="vsphere_server=${VSPHERE_ENDPOINT}" \
             -var="vsphere_folder=${VSPHERE_FOLDER}" \
-            -var="juju_authorized_key=$(cat ~/.local/share/juju/ssh/juju_id_rsa.pub)" \
+            -var="juju_authorized_key=$(cat ${PUBLIC_KEY})" \
+            -var="tigera_registry_secret=${CHARM_TIGERA_EE_REG_SECRET}" \
             -auto-approve

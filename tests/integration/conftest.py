@@ -215,7 +215,7 @@ def kubectl(ops_test, kubeconfig):
 @pytest.fixture(scope="module")
 def tigera_ee_license() -> str:
     """Fetch the Tigera EE license from the environment as either bare string or base64 encoded."""
-    if license := os.environ.get("CHARM_TIGERA_EE_LICNESE"):
+    if license := os.environ.get("CHARM_TIGERA_EE_LICENSE"):
         try:
             base64.b64decode(license)
         except binascii.Error:

@@ -58,6 +58,8 @@ applications:
           - IP: 10.10.20.14
             peerIP: 10.10.20.3
             peerASN: 65031
+  easyrsa:
+    to: "0"
   ubuntu:
     charm: ubuntu
     num_units: 1
