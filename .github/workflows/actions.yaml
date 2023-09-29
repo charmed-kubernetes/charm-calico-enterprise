@@ -99,12 +99,12 @@ jobs:
         run: |-
           terraform -chdir=tests/testing-environment/vmware init
           terraform -chdir=tests/testing-environment/vmware apply \
-            -var="vsphere_user=${VSPHERE_USER}" \
-            -var="vsphere_password=${VSPHERE_PASS}" \
-            -var="vsphere_server=${VSPHERE_ENDPOINT}" \
-            -var="vsphere_folder=${VSPHERE_FOLDER}" \
-            -var="juju_authorized_key=$(cat ${PUBLIC_KEY})" \
-            -var="tigera_registry_secret=${CHARM_TIGERA_EE_REG_SECRET}" \
+            -var="vsphere_user={{ env.VSPHERE_USER }}" \
+            -var="vsphere_password={{ env.VSPHERE_PASS }}" \
+            -var="vsphere_server={{ env.VSPHERE_ENDPOINT }}" \
+            -var="vsphere_folder={{ env.VSPHERE_FOLDER }}" \
+            -var="juju_authorized_key=$(cat {{ env.PUBLIC_KEY }})" \
+            -var="tigera_registry_secret={{ env.CHARM_TIGERA_EE_REG_SECRET }}" \
             -auto-approve
           echo "Wait for Machines to fully cloud-init..."
           TOR1_IP=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.tor1.value')
@@ -138,12 +138,12 @@ jobs:
 
       - name: Terraform Apply DualTor Machine Infra
         run: |-
-          juju add-model ${JUJU_MODEL}
+          juju add-model {{ env.JUJU_MODEL }}
           juju add-space bgp
           juju add-space mgmt
-          for addr in ${K8S_IPS}; do
+          for addr in {{ K8S_IPS }}; do
             ssh ubuntu@$addr -o "StrictHostKeyChecking no" -- 'hostname'
-            juju add-machine -m ${JUJU_MODEL} ssh:ubuntu@$addr
+            juju add-machine -m {{ env.JUJU_MODEL }} ssh:ubuntu@$addr
           done
           juju move-to-space bgp 10.30.30.12/32 10.30.30.13/32 10.30.30.15/32 10.30.30.16/32 10.30.30.17/32
           juju move-to-space mgmt 10.246.153.0/24
@@ -171,16 +171,16 @@ jobs:
       - name: Juju Teardown
         if: ${{ always() }}
         run: |
-          juju destroy-model ${JUJU_MODEL} --force --destroy-storage
+          juju destroy-model {{ env.JUJU_MODEL }} --force --destroy-storage
 
       - name: Terraform Teardown
         if: ${{ always() }}
         run: |
           terraform -chdir=tests/testing-environment/vmware destroy \
-            -var="vsphere_user=${VSPHERE_USER}" \
-            -var="vsphere_password=${VSPHERE_PASS}" \
-            -var="vsphere_server=${VSPHERE_ENDPOINT}" \
-            -var="vsphere_folder=${VSPHERE_FOLDER}" \
-            -var="juju_authorized_key=$(cat ${PUBLIC_KEY})" \
-            -var="tigera_registry_secret=${CHARM_TIGERA_EE_REG_SECRET}" \
+            -var="vsphere_user={{ env.VSPHERE_USER }}" \
+            -var="vsphere_password={{ env.VSPHERE_PASS }}" \
+            -var="vsphere_server={{ env.VSPHERE_ENDPOINT }}" \
+            -var="vsphere_folder={{ env.VSPHERE_FOLDER }}" \
+            -var="juju_authorized_key=$(cat {{ env.PUBLIC_KEY }})" \
+            -var="tigera_registry_secret={{ env.CHARM_TIGERA_EE_REG_SECRET }}" \
             -auto-approve
