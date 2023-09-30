@@ -44,7 +44,6 @@ jobs:
         run: |-
           sudo snap install terraform --channel=latest/stable --classic
           sudo snap install yq --classic
-          sudo apt install sshuttle -y
       - name: Generate SSH Keys
         run: |-
           ssh-keygen -b 2048 -t rsa -N "" -f ${HOME}/.ssh/id_rsa
