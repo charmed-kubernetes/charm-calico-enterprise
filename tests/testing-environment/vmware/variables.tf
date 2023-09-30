@@ -1,7 +1,7 @@
 variable "vsphere_server" {
     description = "IP Address of the VSphere Environment."
-    sensitive   = true
     type        = string
+    sensitive   = true
 }
 
 variable "vsphere_user" {
