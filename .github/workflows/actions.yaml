@@ -88,14 +88,15 @@ jobs:
             exit -1
           fi
 
-          echo "export TF_VAR_vsphere_server"="$VSPHERE_ENDPOINT" >> "$GITHUB_ENV"
-          echo "export TF_VAR_vsphere_user"="$VSPHERE_USER" >> "$GITHUB_ENV"
-          echo "export TF_VAR_vsphere_password"="$VSPHERE_PASS" >> "$GITHUB_ENV"
-          echo "export TF_VAR_tigera_registry_secret"="$CHARM_TIGERA_EE_REG_SECRET" >> "$GITHUB_ENV"
           echo "VSPHERE_FOLDER"="$VSPHERE_FOLDER" >> "$GITHUB_ENV"
+          echo "export TF_VAR_vsphere_server"="$VSPHERE_ENDPOINT" >> "$GITHUB_ENV".secrets
+          echo "export TF_VAR_vsphere_user"="$VSPHERE_USER" >> "$GITHUB_ENV".secrets
+          echo "export TF_VAR_vsphere_password"="$VSPHERE_PASS" >> "$GITHUB_ENV".secrets
+          echo "export TF_VAR_tigera_registry_secret"="$CHARM_TIGERA_EE_REG_SECRET" >> "$GITHUB_ENV".secrets
 
       - name: Terraform Create Cloud
         run: |-
+          source "$GITHUB_ENV".secrets
           terraform -chdir=tests/testing-environment/vmware init
           terraform -chdir=tests/testing-environment/vmware apply \
             -var="vsphere_folder=${{ env.VSPHERE_FOLDER }}" \
@@ -131,7 +132,7 @@ jobs:
           bootstrap-constraints: ""
           bootstrap-options: ""
 
-      - name: Terraform Apply DualTor Machine Infra
+      - name: Juju Deploy DualTor Charms
         run: |-
           juju add-model ${{ env.JUJU_MODEL }}
           juju add-space bgp
@@ -171,6 +172,7 @@ jobs:
       - name: Terraform Teardown
         if: ${{ always() }}
         run: |
+          source "$GITHUB_ENV".secrets
           terraform -chdir=tests/testing-environment/vmware destroy \
             -var="vsphere_folder=${{ env.VSPHERE_FOLDER }}" \
             -var="juju_authorized_key=$(cat ${{ env.PUBLIC_KEY }})" \
