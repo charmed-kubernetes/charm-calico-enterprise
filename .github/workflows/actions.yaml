@@ -120,7 +120,7 @@ jobs:
 
           echo "TOR1_IP"="$TOR1_IP" >> "$GITHUB_ENV"
           echo "TOR2_IP"="$TOR2_IP" >> "$GITHUB_ENV"
-          echo "K8S_IPS"="$K8S_IPS" >> "$GITHUB_ENV"
+          echo "K8S_IPS"=\"${K8S_IPS}\" >> "$GITHUB_ENV"
           echo "CONTROLLER_IP"="$CONTROLLER_IP" >> "$GITHUB_ENV"
           echo "MANUAL_CLOUD_YAML"="$MANUAL_CLOUD_YAML" >> "$GITHUB_ENV"
 
@@ -139,7 +139,7 @@ jobs:
           juju add-model ${{ env.JUJU_MODEL }}
           juju add-space bgp
           juju add-space mgmt
-          for addr in ${{ env.K8S_IPS }}; do
+          for addr in $(echo ${{ env.K8S_IPS }}); do
             ssh ubuntu@$addr -o "StrictHostKeyChecking no" -- 'hostname'
             juju add-machine -m ${{ env.JUJU_MODEL }} ssh:ubuntu@$addr
           done
