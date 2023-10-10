@@ -50,8 +50,8 @@ jobs:
           PRIVATE_KEY=${HOME}/.ssh/id_rsa
           PUBLIC_KEY=${HOME}/.ssh/id_rsa.pub
 
-          echo "PRIVATE_KEY=${PRIVATE_KEY}" >> "$GITHUB_ENV"
-          echo "PUBLIC_KEY=${PUBLIC_KEY}" >> "$GITHUB_ENV"
+          echo "PRIVATE_KEY"="${PRIVATE_KEY}" >> "$GITHUB_ENV"
+          echo "PUBLIC_KEY"="${PUBLIC_KEY}" >> "$GITHUB_ENV"
 
       - name: Apply cloud credentials
         run: |-
@@ -88,11 +88,11 @@ jobs:
             exit -1
           fi
 
-          echo "TF_VAR_vsphere_server=$VSPHERE_ENDPOINT" >> "$GITHUB_ENV"
-          echo "TF_VAR_vsphere_user=$VSPHERE_USER" >> "$GITHUB_ENV"
-          echo "TF_VAR_vsphere_password=$VSPHERE_PASS" >> "$GITHUB_ENV"
-          echo "TF_VAR_tigera_registry_secret=$CHARM_TIGERA_EE_REG_SECRET" >> "$GITHUB_ENV"
-          echo "VSPHERE_FOLDER=$VSPHERE_FOLDER" >> "$GITHUB_ENV"
+          echo "export TF_VAR_vsphere_server"="$VSPHERE_ENDPOINT" >> "$GITHUB_ENV"
+          echo "export TF_VAR_vsphere_user"="$VSPHERE_USER" >> "$GITHUB_ENV"
+          echo "export TF_VAR_vsphere_password"="$VSPHERE_PASS" >> "$GITHUB_ENV"
+          echo "export TF_VAR_tigera_registry_secret"="$CHARM_TIGERA_EE_REG_SECRET" >> "$GITHUB_ENV"
+          echo "VSPHERE_FOLDER"="$VSPHERE_FOLDER" >> "$GITHUB_ENV"
 
       - name: Terraform Create Cloud
         run: |-
@@ -115,11 +115,11 @@ jobs:
           )
           ssh ubuntu@$CONTROLLER_IP -o "StrictHostKeyChecking no" -- 'hostname'
 
-          echo "TOR1_IP=$TOR1_IP" >> "$GITHUB_ENV"
-          echo "TOR2_IP=$TOR2_IP" >> "$GITHUB_ENV"
-          echo "K8S_IPS=$K8S_IPS" >> "$GITHUB_ENV"
-          echo "CONTROLLER_IP=$CONTROLLER_IP" >> "$GITHUB_ENV"
-          echo "MANUAL_CLOUD_YAML=$MANUAL_CLOUD_YAML" >> "$GITHUB_ENV"
+          echo "TOR1_IP"="$TOR1_IP" >> "$GITHUB_ENV"
+          echo "TOR2_IP"="$TOR2_IP" >> "$GITHUB_ENV"
+          echo "K8S_IPS"="$K8S_IPS" >> "$GITHUB_ENV"
+          echo "CONTROLLER_IP"="$CONTROLLER_IP" >> "$GITHUB_ENV"
+          echo "MANUAL_CLOUD_YAML"="$MANUAL_CLOUD_YAML" >> "$GITHUB_ENV"
 
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
