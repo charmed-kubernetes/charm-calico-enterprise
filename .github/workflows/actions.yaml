@@ -58,45 +58,47 @@ jobs:
           CLOUD_CREDS=${HOME}/.cloud-creds
           CREDENTIALS_YAML=$CLOUD_CREDS/credentials.yaml
           CLOUDS_YAML=$CLOUD_CREDS/clouds.yaml
+          TF_SECRETS=$CLOUD_CREDS/tf_secrets.sh
           mkdir -p $CLOUD_CREDS
-          if [ -z "$CREDENTIALS_YAML_CONTENT" ]; then 
+          if [ -z "$CREDENTIALS_YAML_CONTENT" ]; then
             >&2 echo "No cloud credentials available"
             exit -1
           fi
-          if [ -z "$CLOUDS_YAML_CONTENT" ]; then 
+          if [ -z "$CLOUDS_YAML_CONTENT" ]; then
             >&2 echo "No cloud yaml available"
             exit -1
           fi
           echo "${CREDENTIALS_YAML_CONTENT}" | base64 -d > $CREDENTIALS_YAML
           echo "${CLOUDS_YAML_CONTENT}" | base64 -d > $CLOUDS_YAML
-          VSPHERE_USER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.user)
+          VSPHERE_USER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-ci.user)
           VSPHERE_ENDPOINT=$(cat $CLOUDS_YAML | yq -r .clouds.vsphere.endpoint)
-          VSPHERE_PASS=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.password)
-          VSPHERE_FOLDER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-crew.vmfolder)
+          VSPHERE_PASS=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-ci.password)
+          VSPHERE_FOLDER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-ci.vmfolder)
           VSPHERE_FOLDER="${VSPHERE_FOLDER}/Calico Enterprise ($GITHUB_SHA)"
 
-          if [ -z "$VSPHERE_ENDPOINT" ]; then 
+          if [ "$VSPHERE_ENDPOINT" == "null" ]; then
             >&2 echo "No vsphere endpoint detected"
             exit -1
           fi
-          if [ -z "$VSPHERE_USER" ]; then 
+          if [ "$VSPHERE_USER" == "null" ]; then
             >&2 echo "No vsphere user detected"
             exit -1
           fi
-          if [ -z "$VSPHERE_PASS" ]; then 
+          if [ "$VSPHERE_PASS" == "null" ]; then
             >&2 echo "No vsphere password detected"
             exit -1
           fi
 
           echo "VSPHERE_FOLDER"="$VSPHERE_FOLDER" >> "$GITHUB_ENV"
-          echo "export TF_VAR_vsphere_server"="$VSPHERE_ENDPOINT" >> "$GITHUB_ENV".secrets
-          echo "export TF_VAR_vsphere_user"="$VSPHERE_USER" >> "$GITHUB_ENV".secrets
-          echo "export TF_VAR_vsphere_password"="$VSPHERE_PASS" >> "$GITHUB_ENV".secrets
-          echo "export TF_VAR_tigera_registry_secret"="$CHARM_TIGERA_EE_REG_SECRET" >> "$GITHUB_ENV".secrets
+          echo "TF_SECRETS"="$TF_SECRETS" >> "$GITHUB_ENV"
+          echo "export TF_VAR_vsphere_server"="$VSPHERE_ENDPOINT" >> $TF_SECRETS
+          echo "export TF_VAR_vsphere_user"="$VSPHERE_USER" >> $TF_SECRETS
+          echo "export TF_VAR_vsphere_password"="$VSPHERE_PASS" >> $TF_SECRETS
+          echo "export TF_VAR_tigera_registry_secret"="$CHARM_TIGERA_EE_REG_SECRET" >> $TF_SECRETS
 
       - name: Terraform Create Cloud
         run: |-
-          source "$GITHUB_ENV".secrets
+          source "${{ env.TF_SECRETS }}"
           terraform -chdir=tests/testing-environment/vmware init
           terraform -chdir=tests/testing-environment/vmware apply \
             -var="vsphere_folder=${{ env.VSPHERE_FOLDER }}" \
@@ -172,7 +174,7 @@ jobs:
       - name: Terraform Teardown
         if: ${{ always() }}
         run: |
-          source "$GITHUB_ENV".secrets
+          source "${{ env.TF_SECRETS }}"
           terraform -chdir=tests/testing-environment/vmware destroy \
             -var="vsphere_folder=${{ env.VSPHERE_FOLDER }}" \
             -var="juju_authorized_key=$(cat ${{ env.PUBLIC_KEY }})" \
