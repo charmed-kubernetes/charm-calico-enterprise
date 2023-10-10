@@ -106,7 +106,7 @@ options:
     type: string
     description: |
       A pattern to configure as the Calico NIC detection method. For example enp.*.
-      Takes precident over CIDR.
+      Takes precedence over CIDR.
       For details on Autodetection see: https://docs.tigera.io/calico-enterprise/latest/networking/ipam/ip-autodetection#autodetection-methods
   nic_autodetection_cidrs:
     default: ""
