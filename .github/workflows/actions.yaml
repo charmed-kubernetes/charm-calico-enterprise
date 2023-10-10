@@ -141,10 +141,11 @@ jobs:
           juju add-space mgmt
           for addr in $(echo ${{ env.K8S_IPS }}); do
             ssh ubuntu@$addr -o "StrictHostKeyChecking no" -- 'hostname'
-            juju add-machine -m ${{ env.JUJU_MODEL }} ssh:ubuntu@$addr
+            juju add-machine ssh:ubuntu@$addr
           done
-          juju move-to-space bgp 10.30.30.12/32 10.30.30.13/32 10.30.30.15/32 10.30.30.16/32 10.30.30.17/32
+          juju wait-for model ${{ env.JUJU_MODEL }} --query='forEach(machines, mac => mac.status == "started")' --timeout=5m
           juju move-to-space mgmt 10.246.153.0/24
+          juju move-to-space bgp 10.30.30.12/32 10.30.30.13/32 10.30.30.15/32 10.30.30.16/32 10.30.30.17/32
       - name: Run test
         run: tox -e integration -- --basetemp=/home/ubuntu/pytest
       - name: Setup Debug Artifact Collection
@@ -157,6 +158,7 @@ jobs:
       - name: Collect Juju Status
         if: ${{ failure() }}
         run: |
+          juju spaces 2>&1 | tee tmp/juju-spaces.txt
           juju status 2>&1 | tee tmp/juju-status.txt
           juju-crashdump -s -m controller -a debug-layer -a config -o tmp/
           mv juju-crashdump-* tmp/ | true
@@ -169,7 +171,7 @@ jobs:
       - name: Juju Teardown
         if: ${{ always() }}
         run: |
-          juju destroy-model {{ env.JUJU_MODEL }} --force --destroy-storage
+          juju destroy-model ${{ env.JUJU_MODEL }} --force --destroy-storage
 
       - name: Terraform Teardown
         if: ${{ always() }}
