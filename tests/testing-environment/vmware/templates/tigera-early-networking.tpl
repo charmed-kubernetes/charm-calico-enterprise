@@ -5,7 +5,7 @@ packages:
 - jq
 users:
   - name: ubuntu
-    groups: [adm, audio, cdrom, dialout, floppy, video, plugdev, dip, netdev]
+    groups: adm,audio,cdrom,dialout,floppy,video,plugdev,dip,netdev
     plain_text_passwd: "ubuntu"
     shell: /bin/bash
     lock_passwd: true
@@ -16,9 +16,9 @@ users:
 write_files:
 - content: |
     #!/bin/bash
-    sudo apt-get update
-    sudo apt-get install -y containerd
-    sudo ctr image pull --user "${tigera_registry_secret}" quay.io/tigera/cnx-node:v${calico_early_version}
+    apt-get update
+    apt-get install -y containerd
+    https_proxy="http://squid.internal:3128" ctr image pull --user "${tigera_registry_secret}" quay.io/tigera/cnx-node:v${calico_early_version}
   path: /tmp/setup-env.sh
   permissions: "0744"
   owner: root:root
@@ -184,8 +184,8 @@ write_files:
         links = get_nics()
         for nic in links[2:]:  # update nic2 and nic3
             ifname = nic["ifname"]
-            subprocess.check_call(shlex.split(f"sudo dhclient -r {ifname}"))
-            subprocess.check_call(shlex.split(f"sudo dhclient {ifname}"))
+            subprocess.check_call(shlex.split(f"dhclient -r {ifname}"))
+            subprocess.check_call(shlex.split(f"dhclient {ifname}"))
 
         with open("/etc/netplan/50-cloud-init.yaml", "r") as fh:
             netplan = yaml.safe_load(fh.read())
@@ -213,7 +213,7 @@ write_files:
             fh.write(yaml.dump(netplan))
         print("Wrote updated netplan!")
 
-        subprocess.call("sudo netplan apply".split())
+        subprocess.call("netplan apply".split())
 
 
     if __name__ == "__main__":
@@ -273,11 +273,12 @@ write_files:
 output: {all: '| tee -a /var/log/cloud-init-output.log'}
 runcmd:
 # - ["/tmp/configure_gateway.py", "--cidr", "10.10.10.0/24", "--gateway", "10.10.10.3"]
+- [set, -e]
 - [/tmp/setup-env.sh]
 - [/tmp/reconfigure_netplan.py]
 - [/tmp/render_calico_early.py]
-- sudo systemctl start calico-early
-- sudo systemctl start calico-early-wait
+- systemctl start calico-early
+- systemctl start calico-early-wait
 - iptables -t nat -A POSTROUTING -s 10.30.30.0/24 ! -d 10.30.30.0/24 -o ens224 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens224") | .addr_info[0].local')
 - iptables -t nat -A POSTROUTING -s 10.30.30.0/24 ! -d 10.30.30.0/24 -o ens256 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens256") | .addr_info[0].local')
 # power_state:

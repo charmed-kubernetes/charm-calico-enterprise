@@ -98,13 +98,12 @@ jobs:
 
       - name: Terraform Create Cloud
         run: |-
-          source "${{ env.TF_SECRETS }}"
+          source "${TF_SECRETS}"
           terraform -chdir=tests/testing-environment/vmware init
           terraform -chdir=tests/testing-environment/vmware apply \
-            -var="vsphere_folder=${{ env.VSPHERE_FOLDER }}" \
-            -var="juju_authorized_key=$(cat ${{ env.PUBLIC_KEY }})" \
+            -var="vsphere_folder=${VSPHERE_FOLDER}" \
+            -var="juju_authorized_key=$(cat ${PUBLIC_KEY})" \
             -auto-approve
-          echo "Wait for Machines to fully cloud-init..."
           TOR1_IP=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.tor1.value')
           TOR2_IP=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.tor2.value')
           K8S_IPS=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.k8s_addresses.value | to_entries | .[].value')
@@ -116,7 +115,7 @@ jobs:
               endpoint: ubuntu@${CONTROLLER_IP}
           EOF
           )
-          ssh ubuntu@$CONTROLLER_IP -o "StrictHostKeyChecking no" -- 'hostname'
+          ssh ubuntu@$CONTROLLER_IP -o "StrictHostKeyChecking no" -- 'cloud-init status --wait'
 
           echo "TOR1_IP"="$TOR1_IP" >> "$GITHUB_ENV"
           echo "TOR2_IP"="$TOR2_IP" >> "$GITHUB_ENV"
@@ -136,18 +135,19 @@ jobs:
 
       - name: Juju Deploy DualTor Charms
         run: |-
-          juju add-model ${{ env.JUJU_MODEL }}
+          juju add-model ${JUJU_MODEL}
           juju add-space bgp
           juju add-space mgmt
-          for addr in $(echo ${{ env.K8S_IPS }}); do
-            ssh ubuntu@$addr -o "StrictHostKeyChecking no" -- 'hostname'
+          for addr in $(echo ${K8S_IPS}); do
+            echo "Enlisting machine at $addr"
+            ssh ubuntu@$addr -o "StrictHostKeyChecking no" -- 'hostname; cloud-init status --wait'
             juju add-machine ssh:ubuntu@$addr
           done
-          juju wait-for model ${{ env.JUJU_MODEL }} --query='forEach(machines, mac => mac.status == "started")' --timeout=5m
+          juju wait-for model ${JUJU_MODEL} --query='forEach(machines, mac => mac.status == "started")' --timeout=5m
           juju move-to-space mgmt 10.246.153.0/24
           juju move-to-space bgp 10.30.30.12/32 10.30.30.13/32 10.30.30.15/32 10.30.30.16/32 10.30.30.17/32
       - name: Run test
-        run: tox -e integration -- --basetemp=/home/ubuntu/pytest
+        run: tox -e integration -- --basetemp=/home/ubuntu/pytest --crash-dump=on-failure
       - name: Setup Debug Artifact Collection
         if: ${{ failure() }}
         run: mkdir tmp
@@ -172,13 +172,13 @@ jobs:
       - name: Juju Teardown
         if: ${{ always() }}
         run: |
-          juju destroy-model ${{ env.JUJU_MODEL }} --force --destroy-storage --no-prompt
+          juju destroy-model ${JUJU_MODEL} --force --destroy-storage --no-prompt
 
       - name: Terraform Teardown
         if: ${{ always() }}
         run: |
-          source "${{ env.TF_SECRETS }}"
+          source "${TF_SECRETS}"
           terraform -chdir=tests/testing-environment/vmware destroy \
-            -var="vsphere_folder=${{ env.VSPHERE_FOLDER }}" \
-            -var="juju_authorized_key=$(cat ${{ env.PUBLIC_KEY }})" \
+            -var="vsphere_folder=${VSPHERE_FOLDER}" \
+            -var="juju_authorized_key=$(cat ${PUBLIC_KEY})" \
             -auto-approve

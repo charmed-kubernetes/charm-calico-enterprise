@@ -220,7 +220,8 @@ def tigera_ee_license() -> str:
             base64.b64decode(license)
         except binascii.Error:
             # missing the b64 encoded, add that here
-            license = base64.b64encode(license).decode()
+            as_bytes = license.encode()
+            license = base64.b64encode(as_bytes).decode()
         return license
     raise KeyError("Tigera License not found")
 

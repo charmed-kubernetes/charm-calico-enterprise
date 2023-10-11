@@ -29,7 +29,6 @@ PING_LOSS_RE = re.compile(r"(?:([\d\.]+)% packet loss)")
 @pytest.mark.abort_on_fail
 @pytest.mark.skip_if_deployed
 async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_ee_license):
-    log.info("Build charm...")
     charm = next(Path(".").glob("calico-enterprise*.charm"), None)
     if not charm:
         log.info("Building Charm...")
@@ -50,13 +49,11 @@ async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_
         tigera_ee_license=tigera_ee_license,
     )
 
-    log.info("Deploy charm...")
-    # TODO: Undo this
     juju_cmd = (
         f"deploy --map-machines=existing -m {ops_test.model_full_name} {bundle} --trust "
         + " ".join(f"--overlay={f}" for f in overlays)
     )
-    print(juju_cmd)
+    log.info("Deploy charm...")
 
     await ops_test.juju(*shlex.split(juju_cmd), check=True, fail_msg="Bundle deploy failed")
     await ops_test.model.block_until(

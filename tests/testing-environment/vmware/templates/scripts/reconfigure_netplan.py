@@ -22,8 +22,8 @@ def reconfigure_netplan():
     links = get_nics()
     for nic in links[2:]:  # update nic2 and nic3
         ifname = nic["ifname"]
-        subprocess.check_call(shlex.split(f"sudo dhclient -r {ifname}"))
-        subprocess.check_call(shlex.split(f"sudo dhclient {ifname}"))
+        subprocess.check_call(shlex.split(f"dhclient -r {ifname}"))
+        subprocess.check_call(shlex.split(f"dhclient {ifname}"))
 
     with open("/etc/netplan/50-cloud-init.yaml", "r") as fh:
         netplan = yaml.safe_load(fh.read())
@@ -51,7 +51,7 @@ def reconfigure_netplan():
         fh.write(yaml.dump(netplan))
     print("Wrote updated netplan!")
 
-    subprocess.call("sudo netplan apply".split())
+    subprocess.call("netplan apply".split())
 
 
 if __name__ == "__main__":

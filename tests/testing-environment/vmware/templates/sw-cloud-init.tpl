@@ -5,7 +5,7 @@ packages:
 - bird2
 users:
   - name: ubuntu
-    groups: [adm, audio, cdrom, dialout, floppy, video, plugdev, dip, netdev]
+    groups: adm,audio,cdrom,dialout,floppy,video,plugdev,dip,netdev
     plain_text_passwd: "ubuntu"
     shell: /bin/bash
     lock_passwd: true
