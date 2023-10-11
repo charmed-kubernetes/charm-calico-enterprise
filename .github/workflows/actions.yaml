@@ -171,7 +171,7 @@ jobs:
       - name: Juju Teardown
         if: ${{ always() }}
         run: |
-          juju destroy-model ${{ env.JUJU_MODEL }} --force --destroy-storage
+          juju destroy-model ${{ env.JUJU_MODEL }} --force --destroy-storage --no-prompt
 
       - name: Terraform Teardown
         if: ${{ always() }}
