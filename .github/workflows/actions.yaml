@@ -151,11 +151,10 @@ jobs:
       - name: Setup Debug Artifact Collection
         if: ${{ failure() }}
         run: mkdir tmp
-      - name: Collect Charmcraft/PyTest Errors
+      - name: Collect Charmcraft Errors
         if: ${{ failure() }}
         run: |
           mv /home/ubuntu/.local/state/charmcraft/log/* tmp/ | true
-          mv /home/ubuntu/pytest tmp/pytest-tmp | true
       - name: Collect Juju Status
         if: ${{ failure() }}
         run: |
