@@ -21,8 +21,8 @@ options:
       LicenseKey should be a file, appiled as a bas64 string
 
       file format:
-          kind:LicenseKey
-          apiVersion: projectcalico.org/v3
+          kind: LicenseKey
+          apiVersion: crd.projectcalico.org/v1
           spec:
             certificate: <content>
             token: <content>
@@ -66,8 +66,7 @@ options:
     default: ""
     type: string
     description: |
-      String in the format of "user:password". Passed as a secret named
-      tigera-pull-secret.
+      String in the format of "user:password" run through base64 encoding
   tigera_version:
     default: 'distro'
     type: string

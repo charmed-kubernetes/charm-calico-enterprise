@@ -38,7 +38,8 @@ spec:
    labels:
      rack: r"""
 
-TEST_CONFIGURE_BGP_BGPPEER_YAML = """apiVersion: crd.projectcalico.org/v1
+TEST_CONFIGURE_BGP_BGPPEER_YAML = """
+apiVersion: crd.projectcalico.org/v1
 kind: BGPPeer
 metadata:
   name: r-30.30.30.30

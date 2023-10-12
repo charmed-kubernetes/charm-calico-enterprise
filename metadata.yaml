@@ -25,16 +25,3 @@ requires:
 peers:
   tigera:
     interface: tigera
-resources:
-  calico-enterprise-manifest:
-    type: file
-    filename: tigera-installation.yaml
-    description: |-
-      The Tigera manifest
-      https://downloads.tigera.io/ee/v3.17.1/manifests/tigera-operator.yaml
-  calico-crd-manifest:
-    type: file
-    filename: tigera-crds.yaml
-    description: |-
-      The Tigera CRDs manifest
-      https://downloads.tigera.io/ee/v3.17.1/manifests/custom-resources.yaml

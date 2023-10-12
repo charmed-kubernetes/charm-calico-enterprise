@@ -34,6 +34,12 @@ write_files:
   permissions: "0644"
   owner: root:root
 - content: |
+    [Service]
+    Environment="HTTP_PROXY=http://squid.internal:3128" "HTTPS_PROXY=http://squid.internal:3128" "NO_PROXY=localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.101.249.0/24,10.152.183.0/24,10.246.153.0/24,10.246.154.0/24,10.246.155.0/24"
+  path: /etc/systemd/system/containerd.service.d/proxy.conf
+  permissions: "0644"
+  owner: root:root
+- content: |
     [Unit]
     After=calico-early.service
     Before=snap.kubelet.daemon.service

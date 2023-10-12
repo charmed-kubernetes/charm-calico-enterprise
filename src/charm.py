@@ -12,6 +12,7 @@ develop a new k8s charm using the Operator Framework:
 https://discourse.charmhub.io/t/4208
 """
 
+import binascii
 import ipaddress
 import logging
 import os
@@ -20,7 +21,9 @@ import tempfile
 import time
 import traceback
 from base64 import b64decode
+from dataclasses import dataclass
 from subprocess import CalledProcessError, check_output
+from typing import Optional, Tuple
 
 import yaml
 from conctl import getContainerRuntimeCtl
@@ -39,9 +42,18 @@ VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 TIGERA_DISTRO_VERSIONS = {"1.26": "3.16.1", "1.25": "3.15.2"}
 KUBECONFIG_PATH = "/root/.kube/config"
 PLUGINS_PATH = "/usr/local/bin"
+EE_MANIFESTS = pathlib.Path("upstream/ee")
 
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class RegistrySecret:
+    """Holds username and password for registry secret."""
+
+    username: str
+    password: str
 
 
 class TigeraCalicoError(Exception):
@@ -170,6 +182,21 @@ class TigeraCharm(CharmBase):
         """Return bgp parameter as a dict."""
         return yaml.safe_load(self.model.config["bgp_parameters"])
 
+    def image_registry_secret(self) -> Tuple[Optional[RegistrySecret], str]:
+        """Read Image Registry secret to username:password."""
+        value = self.model.config["image_registry_secret"]
+        if not value:
+            return None, "Registry secret is required"
+        try:
+            decoded = b64decode(value).decode()
+        except binascii.Error:
+            # password is not b64encoded, treat as plaintext
+            decoded = value
+        split = decoded.split(":")
+        if len(split) != 2:
+            return None, "Registry secret isn't formatted as <user:pass>"
+        return RegistrySecret(*split), ""
+
     #######################
     ### Tigera  Methods ###
     #######################
@@ -185,8 +212,9 @@ class TigeraCharm(CharmBase):
             self.unit.status = BlockedStatus("BGP configuration is required.")
             return False
 
-        if not self.model.config["image_registry_secret"]:
-            self.unit.status = BlockedStatus("Registry secret is required")
+        val, err = self.image_registry_secret()
+        if not val:
+            self.unit.status = BlockedStatus(err)
             return False
 
         if not self.model.config["license"]:
@@ -231,6 +259,16 @@ class TigeraCharm(CharmBase):
             self.kubectl("version", "--short").split("Server Version: v")[1].split(".")[:2]
         )
 
+    @property
+    def tigera_version(self):
+        """Returns the tigera installation version."""
+        return (EE_MANIFESTS / "version").read_text()
+
+    @property
+    def manifests(self):
+        """Load charm tigera manifests based on supported versions in the charm."""
+        return EE_MANIFESTS / "manifests" / self.tigera_version
+
     def apply_tigera_operator(self):
         """Apply the tigera operator yaml.
 
@@ -240,8 +278,8 @@ class TigeraCharm(CharmBase):
             self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
             return False
         try:
-            installation_manifest = self.model.resources.fetch("calico-enterprise-manifest")
-            crds_manifest = self.model.resources.fetch("calico-crd-manifest")
+            installation_manifest = self.manifests / "tigera-operator.yaml"
+            crds_manifest = self.manifests / "custom-resources.yaml"
         except ModelError:
             self.unit.status = BlockedStatus(
                 "Could not get tigera manifest resources. Check juju debug-log."
@@ -252,7 +290,7 @@ class TigeraCharm(CharmBase):
             self.kubectl("create", "-f", crds_manifest)
         except CalledProcessError:
             # TODO implement a check which checks for tigera resources
-            logger.warn("Kubectl create failed - tigera operator my not be deployed.")
+            logger.warn("Kubectl create failed - tigera operator may not be deployed.")
             return True
 
     def check_tigera_operator_deployment_status(self):
@@ -488,7 +526,8 @@ class TigeraCharm(CharmBase):
             return
 
         self.unit.status = MaintenanceStatus("Configuring image secret and license file...")
-        if self.model.config["image_registry"] and self.model.config["image_registry_secret"]:
+        secret, err = self.image_registry_secret()
+        if self.model.config["image_registry"] and secret:
             try:
                 self.kubectl(
                     "delete",
@@ -504,8 +543,8 @@ class TigeraCharm(CharmBase):
                 "secret",
                 "docker-registry",
                 "tigera-pull-secret",
-                f"--docker-username={self.model.config['image_registry_secret'].split(':')[0]}",
-                f"--docker-password={self.model.config['image_registry_secret'].split(':')[1]}",
+                f"--docker-username={secret.username}",
+                f"--docker-password={secret.password}",
                 f"--docker-server={self.model.config['image_registry']}",
                 "-n",
                 "tigera-operator",
@@ -536,11 +575,16 @@ class TigeraCharm(CharmBase):
             )
             return
 
+        secret, err = self.image_registry_secret()
+        if not secret:
+            self.unit.status = BlockedStatus(err)
+            return
+
         self.render_template(
             "calico_enterprise_install.yaml.j2",
             "/tmp/calico_enterprise_install.yaml",
             image_registry=self.model.config["image_registry"],
-            image_registry_secret=self.model.config["image_registry_secret"],
+            image_registry_secret=f"{secret.username}:{secret.password}",
             image_path=self.model.config["image_path"],
             image_prefix=self.model.config["image_prefix"],
             nic_autodetection=nic_autodetection,

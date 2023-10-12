@@ -138,7 +138,7 @@ jobs:
           juju add-model ${JUJU_MODEL}
           juju add-space bgp
           juju add-space mgmt
-          for addr in $(echo ${K8S_IPS}); do
+          for addr in $(echo ${{ env.K8S_IPS }}); do
             echo "Enlisting machine at $addr"
             ssh ubuntu@$addr -o "StrictHostKeyChecking no" -- 'hostname; cloud-init status --wait'
             juju add-machine ssh:ubuntu@$addr

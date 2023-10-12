@@ -230,6 +230,12 @@ def tigera_ee_license() -> str:
 def tigera_ee_reg_secret() -> str:
     """Fetch the Tigera EE registry secret."""
     if reg_secret := os.environ.get("CHARM_TIGERA_EE_REG_SECRET"):
+        try:
+            base64.b64decode(reg_secret)
+        except binascii.Error:
+            # missing the b64 encoded, add that here
+            as_bytes = reg_secret.encode()
+            reg_secret = base64.b64encode(as_bytes).decode()
         return reg_secret
     raise KeyError("Tigera Reg Secret not found")
 
