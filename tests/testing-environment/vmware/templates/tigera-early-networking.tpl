@@ -97,10 +97,10 @@ write_files:
     kind: EarlyNetworkingConfiguration
     spec:
       nodes:
-      - asNumber: 64512
+      - asNumber: 645{{node_final_octet}}
         interfaceAddresses:
-        - {{node0_interface1_addr}}
-        - {{node0_interface2_addr}}
+        - {{node_interface1_addr}}
+        - {{node_interface2_addr}}
         labels:
           rack: rack1
         peerings:
@@ -109,59 +109,7 @@ write_files:
         - peerASNumber: 65502
           peerIP: ${switch_network_sw2}
         stableAddress:
-          address: 10.30.30.12
-      - asNumber: 64513
-        interfaceAddresses:
-        - {{node1_interface1_addr}}
-        - {{node1_interface2_addr}}
-        labels:
-          rack: rack1
-        peerings:
-        - peerASNumber: 65501
-          peerIP: ${switch_network_sw1}
-        - peerASNumber: 65502
-          peerIP: ${switch_network_sw2}
-        stableAddress:
-          address: 10.30.30.13
-      - asNumber: 64515
-        interfaceAddresses:
-        - {{node2_interface1_addr}}
-        - {{node2_interface2_addr}}
-        labels:
-          rack: rack1
-        peerings:
-        - peerASNumber: 65501
-          peerIP: ${switch_network_sw1}
-        - peerASNumber: 65502
-          peerIP: ${switch_network_sw2}
-        stableAddress:
-          address: 10.30.30.15
-      - asNumber: 64516
-        interfaceAddresses:
-        - {{node3_interface1_addr}}
-        - {{node3_interface2_addr}}
-        labels:
-          rack: rack1
-        peerings:
-        - peerASNumber: 65501
-          peerIP: ${switch_network_sw1}
-        - peerASNumber: 65502
-          peerIP: ${switch_network_sw2}
-        stableAddress:
-          address: 10.30.30.16
-      - asNumber: 64517
-        interfaceAddresses:
-        - {{node4_interface1_addr}}
-        - {{node4_interface2_addr}}
-        labels:
-          rack: rack1
-        peerings:
-        - peerASNumber: 65501
-          peerIP: ${switch_network_sw1}
-        - peerASNumber: 65502
-          peerIP: ${switch_network_sw2}
-        stableAddress:
-          address: 10.30.30.17
+          address: 10.30.30.{{node_final_octet}}
   path: /tmp/calico_early.tpl
   owner: root:root
   permissions: '644'
@@ -202,15 +150,15 @@ write_files:
                     "addresses": list(nic_addresses(ip_json, links[2]["ifname"])),
                     "set-name": links[2]["ifname"],
                     "match": {"macaddress": links[2]["address"]},
-                    "routes": [{"to": "default", "via": "10.246.154.12"}],
+                    "routes": [{"to": "default", "via": "${switch_network_sw1}"}],
                 },
                 links[3]["ifname"]: {
                     "addresses": list(nic_addresses(ip_json, links[3]["ifname"])),
                     "set-name": links[3]["ifname"],
                     "match": {"macaddress": links[3]["address"]},
                     "routes": [
-                        {"to": "0.0.0.0/1", "via": "10.246.155.158"},
-                        {"to": "128.0.0.0/1", "via": "10.246.155.158"},
+                        {"to": "0.0.0.0/1", "via": "${switch_network_sw2}"},
+                        {"to": "128.0.0.0/1", "via": "${switch_network_sw2}"},
                     ],
                 },
             }
@@ -259,13 +207,15 @@ write_files:
         hostname = yaml.safe_load(subprocess.check_output("hostnamectl status --json short".split()))[
             "StaticHostname"
         ]
-        node_info = {
-            f"node{hostname.split('-')[2]}_interface1_addr": ip_2,
-            f"node{hostname.split('-')[2]}_interface2_addr": ip_3,
+        host_id = int(hostname.split("-")[2])
+        context = {
+            "node_interface1_addr": ip_2,
+            "node_interface2_addr": ip_3,
+            "node_final_octet": host_id + 12,
         }
 
         with open("/calico-early/cfg.yaml", "w") as fh:
-            fh.write(calico_early_template.render(**node_info))
+            fh.write(calico_early_template.render(**context))
 
         print("Rendered calico early")
 

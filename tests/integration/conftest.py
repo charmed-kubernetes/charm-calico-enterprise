@@ -832,7 +832,7 @@ async def network_policies(client):
     yield tuple(pods)
 
     log.info("Deleting network policy resources ...")
-    for obj in codecs.load_all_yaml(path.read_text()):
+    for obj in reversed(codecs.load_all_yaml(path.read_text())):
         client.delete(type(obj), obj.metadata.name, namespace=obj.metadata.namespace)
 
     await wait_for_removal(client, pods)

@@ -23,5 +23,5 @@ requires:
     interface: kubernetes-cni
     scope: container
 peers:
-  tigera:
-    interface: tigera
+  calico-enterprise:
+    interface: calico-enterprise

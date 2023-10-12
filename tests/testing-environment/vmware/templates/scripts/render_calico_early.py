@@ -29,13 +29,15 @@ def render_calico_early(args):
     hostname = yaml.safe_load(subprocess.check_output("hostnamectl status --json short".split()))[
         "StaticHostname"
     ]
-    node_info = {
-        f"node{hostname.split('-')[2]}_interface1_addr": ip_2,
-        f"node{hostname.split('-')[2]}_interface2_addr": ip_3,
+    host_id = int(hostname.split("-")[2])
+    context = {
+        "node_interface1_addr": ip_2,
+        "node_interface2_addr": ip_3,
+        "node_final_octet": host_id + 12,
     }
 
     with open("/calico-early/cfg.yaml", "w") as fh:
-        fh.write(calico_early_template.render(**node_info))
+        fh.write(calico_early_template.render(**context))
 
     print("Rendered calico early")
 

@@ -383,8 +383,8 @@ async def test_network_policies(client, kubectl_exec, network_policies):
         wait=wait_fixed(1),
         before=before_log(log, logging.INFO),
     )
-    async def check_wget(url, client, msg):
-        stdout = await wget(kubectl_exec, client, url)
+    async def check_wget(url, pod, msg):
+        stdout = await wget(kubectl_exec, pod, url)
         assert msg in stdout
 
     log.info("Checking pods connectivity...")
@@ -403,7 +403,7 @@ async def test_network_policies(client, kubectl_exec, network_policies):
         await check_wget("nginx.netpolicy", blocked_pod, "wget: download timed out")
     finally:
         log.info("Removing NetworkPolicy...")
-        for obj in policies:
+        for obj in reversed(policies):
             client.delete(type(obj), obj.metadata.name, namespace=obj.metadata.namespace)
 
 
@@ -493,13 +493,13 @@ async def ping(kubectl_exec, pinger, pingee, namespace):
     return stdout
 
 
-async def wget(kubectl_exec, client, url):
+async def wget(kubectl_exec, pod, url):
     wget_cmd = f"wget {url} -T 10"
-    args = client.metadata.name, client.metadata.namespace, wget_cmd
+    args = pod.metadata.name, pod.metadata.namespace, wget_cmd
     rc, stdout, stderr = await kubectl_exec(*args, check=False)
     if rc == 0:
         rm_cmd = "rm index.html"
-        args = client.metadata.name, client.metadata.namespace, rm_cmd
+        args = pod.metadata.name, pod.metadata.namespace, rm_cmd
         await kubectl_exec(*args, check=False)
     return stdout + stderr
 
