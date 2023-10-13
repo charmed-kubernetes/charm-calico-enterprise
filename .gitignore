@@ -11,3 +11,4 @@ __pycache__/
 # terraform metadata
 .terraform/
 *.tfstate*
+.integration_local_env
