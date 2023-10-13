@@ -5,8 +5,10 @@ import logging
 import re
 import shlex
 from pathlib import Path
+from typing import Iterable
 
 import pytest
+import yaml
 from lightkube.codecs import load_all_yaml
 from pytest_operator.plugin import OpsTest
 from tenacity import (
@@ -28,7 +30,13 @@ PING_LOSS_RE = re.compile(r"(?:([\d\.]+)% packet loss)")
 
 @pytest.mark.abort_on_fail
 @pytest.mark.skip_if_deployed
-async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_ee_license):
+async def test_build_and_deploy(
+    ops_test: OpsTest,
+    tigera_ee_reg_secret,
+    tigera_ee_license,
+    bgp_parameters,
+    nic_autodetection_cidrs: Iterable[str],
+):
     charm = next(Path(".").glob("calico-enterprise*.charm"), None)
     if not charm:
         log.info("Building Charm...")
@@ -45,6 +53,8 @@ async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_
         charm=charm.resolve(),
         calico_crd_manifest=0,
         calico_install_manifest=0,
+        bgp_parameters=yaml.dump(bgp_parameters),
+        nic_autodetection_cidrs=",".join(nic_autodetection_cidrs),
         tigera_reg_secret=tigera_ee_reg_secret,
         tigera_ee_license=tigera_ee_license,
     )

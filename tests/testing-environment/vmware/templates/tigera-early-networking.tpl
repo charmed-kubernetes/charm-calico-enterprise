@@ -18,24 +18,24 @@ write_files:
     #!/bin/bash
     apt-get update
     apt-get install -y containerd
-    https_proxy="http://squid.internal:3128" ctr image pull --user "${tigera_registry_secret}" quay.io/tigera/cnx-node:v${calico_early_version}
+    https_proxy="${https_proxy}" ctr image pull --user "${tigera_registry_secret}" quay.io/tigera/cnx-node:v${calico_early_version}
   path: /tmp/setup-env.sh
   permissions: "0744"
   owner: root:root
 - content: |
     PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
-    HTTP_PROXY="http://squid.internal:3128"
-    HTTPS_PROXY="http://squid.internal:3128"
-    http_proxy="http://squid.internal:3128"
-    https_proxy="http://squid.internal:3128"
-    NO_PROXY="localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.101.249.0/24,10.152.183.0/24,10.246.153.0/24,10.246.154.0/24,10.246.155.0/24"
-    no_proxy="localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.101.249.0/24,10.152.183.0/24,10.246.153.0/24,10.246.154.0/24,10.246.155.0/24"
+    HTTP_PROXY="${http_proxy}"
+    HTTPS_PROXY="${https_proxy}"
+    http_proxy="${http_proxy}"
+    https_proxy="${https_proxy}"
+    NO_PROXY="${no_proxy}"
+    no_proxy="${no_proxy}"
   path: /etc/environment
   permissions: "0644"
   owner: root:root
 - content: |
     [Service]
-    Environment="HTTP_PROXY=http://squid.internal:3128" "HTTPS_PROXY=http://squid.internal:3128" "NO_PROXY=localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.101.249.0/24,10.152.183.0/24,10.246.153.0/24,10.246.154.0/24,10.246.155.0/24"
+    Environment="HTTP_PROXY=${http_proxy}" "HTTPS_PROXY=${http_proxy}" "NO_PROXY=${no_proxy}"
   path: /etc/systemd/system/containerd.service.d/proxy.conf
   permissions: "0644"
   owner: root:root

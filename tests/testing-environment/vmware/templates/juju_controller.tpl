@@ -14,12 +14,12 @@ users:
 write_files:
 - content: |
     PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
-    HTTP_PROXY="http://squid.internal:3128"
-    HTTPS_PROXY="http://squid.internal:3128"
-    http_proxy="http://squid.internal:3128"
-    https_proxy="http://squid.internal:3128"
-    NO_PROXY="localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.246.153.0/24,10.246.154.0/24"
-    no_proxy="localhost,127.0.0.1,0.0.0.0,ppa.launchpad.net,launchpad.net,10.246.153.0/24,10.246.154.0/24"
+    HTTP_PROXY="${http_proxy}"
+    HTTPS_PROXY="${https_proxy}"
+    http_proxy="${http_proxy}"
+    https_proxy="${https_proxy}"
+    NO_PROXY="${no_proxy}"
+    no_proxy="${no_proxy}"
   path: /etc/environment
   permissions: "0644"
   owner: root:root

@@ -53,6 +53,9 @@ data "cloudinit_config" "juju_controller" {
     content_type = "text/cloud-config"
     content = templatefile("${path.module}/templates/juju_controller.tpl", {
       juju_authorized_key      = var.juju_authorized_key
+      http_proxy               = var.http_proxy
+      https_proxy              = var.https_proxy
+      no_proxy                 = var.no_proxy
     })
   }
 }
@@ -77,6 +80,9 @@ data "cloudinit_config" "calico_early" {
       calico_early_version     = var.calico_early_version,
       k8s_prefix               = "k8s-node"
       juju_authorized_key      = var.juju_authorized_key
+      http_proxy               = var.http_proxy
+      https_proxy              = var.https_proxy
+      no_proxy                 = var.no_proxy
     })
   }
 }
@@ -98,6 +104,9 @@ data "cloudinit_config" "tor1" {
       peer_tor_as         = 65502,
       switch_backbone_net = "10.246.153"
       juju_authorized_key = var.juju_authorized_key
+      http_proxy               = var.http_proxy
+      https_proxy              = var.https_proxy
+      no_proxy                 = var.no_proxy
     })
   }
 }
@@ -119,6 +128,9 @@ data "cloudinit_config" "tor2" {
       peer_tor_as         = 65501,
       switch_backbone_net = "10.246.153",
       juju_authorized_key = var.juju_authorized_key
+      http_proxy               = var.http_proxy
+      https_proxy              = var.https_proxy
+      no_proxy                 = var.no_proxy
     })
   }
 }

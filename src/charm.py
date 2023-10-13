@@ -437,7 +437,8 @@ class TigeraCharm(CharmBase):
         if self.stored.tigera_cni_configured:
             self.unit.status = ActiveStatus()
             self.unit.set_workload_version(self.tigera_version)
-            self.app.status = ActiveStatus(self.tigera_version)
+            if self.unit.is_leader():
+                self.app.status = ActiveStatus(self.tigera_version)
 
     ###########################
     ### Charm Event Methods ###

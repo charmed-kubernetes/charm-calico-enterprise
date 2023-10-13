@@ -3,6 +3,8 @@ parts:
   charm:
     build-packages: [git]
     charm-python-packages: [setuptools, pip]
+    prime:
+      - upstream/**
 bases:
   - build-on:
     - name: "ubuntu"

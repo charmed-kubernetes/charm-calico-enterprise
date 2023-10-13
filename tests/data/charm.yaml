@@ -16,56 +16,13 @@ applications:
     series: jammy
     options:
       stable_ip_cidr: 10.30.30.0/24
-      nic_autodetection_cidrs: "10.10.10.0/24,10.10.20.0/24"
+      nic_autodetection_cidrs: {{nic_autodetection_cidrs}}
       image_registry_secret: {{tigera_reg_secret}}
       license: |- 
         {{tigera_ee_license|indent(8)}}
       # tigera_features: "early-networking"
-      bgp_parameters: | 
-        - hostname: k8s-node-0
-          asn: 65000
-          stableAddress: 10.30.30.12
-          rack: rack1
-          interfaces:
-          - IP: 10.10.10.12
-            peerIP: 10.10.10.3
-            peerASN: 65021
-          - IP: 10.10.20.12
-            peerIP: 10.10.20.3
-            peerASN: 65031
-        - hostname: k8s-node-1
-          asn: 65001
-          stableAddress: 10.30.30.13
-          rack: rack1
-          interfaces:
-          - IP: 10.10.10.13
-            peerIP: 10.10.10.3
-            peerASN: 65021
-          - IP: 10.10.20.13
-            peerIP: 10.10.20.3
-            peerASN: 65031
-        - hostname: k8s-node-2
-          asn: 65002
-          stableAddress: 10.30.30.15
-          rack: rack1
-          interfaces:
-          - IP: 10.10.10.15
-            peerIP: 10.10.10.3
-            peerASN: 65021
-          - IP: 10.10.20.15
-            peerIP: 10.10.20.3
-            peerASN: 65031
-        - hostname: k8s-node-3
-          asn: 65003
-          stableAddress: 10.30.30.16
-          rack: rack1
-          interfaces:
-          - IP: 10.10.10.16
-            peerIP: 10.10.10.3
-            peerASN: 65021
-          - IP: 10.10.20.16
-            peerIP: 10.10.20.3
-            peerASN: 65031
+      bgp_parameters: |-
+        {{bgp_parameters|indent(8)}}
   easyrsa:
     to: 
       - "0"

@@ -55,7 +55,7 @@ jobs:
 
       - name: Apply cloud credentials
         run: |-
-          CLOUD_CREDS=${HOME}/.cloud-creds
+          CLOUD_CREDS=${HOME}/cloud-creds
           CREDENTIALS_YAML=$CLOUD_CREDS/credentials.yaml
           CLOUDS_YAML=$CLOUD_CREDS/clouds.yaml
           TF_SECRETS=$CLOUD_CREDS/tf_secrets.sh
@@ -68,6 +68,7 @@ jobs:
             >&2 echo "No cloud yaml available"
             exit -1
           fi
+
           echo "${CREDENTIALS_YAML_CONTENT}" | base64 -d > $CREDENTIALS_YAML
           echo "${CLOUDS_YAML_CONTENT}" | base64 -d > $CLOUDS_YAML
           VSPHERE_USER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-ci.user)
@@ -89,8 +90,11 @@ jobs:
             exit -1
           fi
 
+          cp .github/data/proxy_config.yaml $CLOUD_CREDS/proxy_config.yaml
+
           echo "VSPHERE_FOLDER"="$VSPHERE_FOLDER" >> "$GITHUB_ENV"
           echo "TF_SECRETS"="$TF_SECRETS" >> "$GITHUB_ENV"
+          echo "MODEL_CONFIG"="$CLOUD_CREDS/proxy_config.yaml" >> "$GITHUB_ENV"
           echo "export TF_VAR_vsphere_server"="$VSPHERE_ENDPOINT" >> $TF_SECRETS
           echo "export TF_VAR_vsphere_user"="$VSPHERE_USER" >> $TF_SECRETS
           echo "export TF_VAR_vsphere_password"="$VSPHERE_PASS" >> $TF_SECRETS
@@ -135,9 +139,11 @@ jobs:
 
       - name: Juju Deploy DualTor Charms
         run: |-
-          juju add-model ${JUJU_MODEL}
+          juju add-model ${JUJU_MODEL} --config="${MODEL_CONFIG}"
           juju add-space bgp
           juju add-space mgmt
+          juju add-space tor-network
+          juju model-config default-space=mgmt
           for addr in $(echo ${{ env.K8S_IPS }}); do
             echo "Enlisting machine at $addr"
             ssh ubuntu@$addr -o "StrictHostKeyChecking no" -- 'hostname; cloud-init status --wait'
@@ -145,7 +151,8 @@ jobs:
           done
           juju wait-for model ${JUJU_MODEL} --query='forEach(machines, mac => mac.status == "started")' --timeout=5m
           juju move-to-space mgmt 10.246.153.0/24
-          juju move-to-space bgp 10.30.30.12/32 10.30.30.13/32 10.30.30.15/32 10.30.30.16/32 10.30.30.17/32
+          juju move-to-space tor-network 10.246.154.0/24 10.246.155.0/24
+          juju move-to-space bgp 10.30.30.12/32 10.30.30.13/32 10.30.30.14/32 10.30.30.15/32 10.30.30.16/32
       - name: Run test
         run: tox -e integration -- --basetemp=/home/ubuntu/pytest --crash-dump=on-failure
       - name: Setup Debug Artifact Collection
