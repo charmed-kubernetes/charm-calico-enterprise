@@ -29,7 +29,7 @@ from jinja2 import Environment, FileSystemLoader
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, StatusBase, WaitingStatus
 
 VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
@@ -282,7 +282,7 @@ class TigeraCharm(CharmBase):
             log.warning("Kubectl create failed - tigera operator may not be deployed.")
             return True
 
-    def tigera_operator_deployment_status(self) -> Optional[str]:
+    def tigera_operator_deployment_status(self) -> StatusBase:
         """Check if tigera operator is ready.
 
         returns error in the event of a failed state.
@@ -299,18 +299,20 @@ class TigeraCharm(CharmBase):
         )
         pods = yaml.safe_load(output)
         if len(pods) == 0:
-            return "tigera-operator POD not found"
+            return WaitingStatus("tigera-operator POD not found")
         elif len(pods) > 1:
-            return f"Too many tigera-operator PODs (num: {len(pods)})"
+            return WaitingStatus(f"Too many tigera-operator PODs (num: {len(pods)})")
         status = pods[0]["status"]
         running = status["phase"] == "Running"
         healthy = all(_["status"] == "True" for _ in status["conditions"])
         if not running:
-            return f"tigera-operator POD not running (phase: {status['phase']})"
+            return WaitingStatus(f"tigera-operator POD not running (phase: {status['phase']})")
         elif not healthy:
             failed = ", ".join(_["type"] for _ in status["conditions"] if _["status"] != "True")
-            return f"tigera-operator POD conditions not healthy (conditions: {failed})"
-        return None
+            return WaitingStatus(
+                f"tigera-operator POD conditions not healthy (conditions: {failed})"
+            )
+        return ActiveStatus("Ready")
 
     """
     def pull_cnx_node_image(self):
@@ -464,9 +466,8 @@ class TigeraCharm(CharmBase):
         if self.waiting_for_cni_relation():
             self.unit.status = WaitingStatus("Waiting for CNI relation")
             return
-        failures = self.tigera_operator_deployment_status()
-        if failures:
-            self.unit.status = BlockedStatus(failures)
+
+        self.unit.status = self.tigera_operator_deployment_status()
 
     def on_cni_relation_changed(self, event):
         """Run CNI relation changed hook."""
