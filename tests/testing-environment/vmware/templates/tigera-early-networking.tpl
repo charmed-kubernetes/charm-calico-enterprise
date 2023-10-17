@@ -1,47 +1,42 @@
 #cloud-config
 package_update: true
 package_upgrade: true
-# network:
-#   version: 2
-#   ethernets:
-#       eth0:
-#           dhcp4: true
-#           routes:
-#           - to: default
-#             via: {{switch_network_sw1}}
-#       eth1:
-#           dhcp4: true
-#           routes:
-#           - to: 0.0.0.0/0
-#             via: {{switch_network_sw2}}
 packages:
 - jq
 users:
   - name: ubuntu
-    ssh_import_id:
-    - lp:pjds
-    groups: [adm, audio, cdrom, dialout, floppy, video, plugdev, dip, netdev]
+    groups: adm,audio,cdrom,dialout,floppy,video,plugdev,dip,netdev
     plain_text_passwd: "ubuntu"
     shell: /bin/bash
-    lock_passwd: false
+    lock_passwd: true
+    ssh_authorized_keys:
+    - ${juju_authorized_key}
     sudo:
     - ALL=(ALL) NOPASSWD:ALL
 write_files:
 - content: |
     #!/bin/bash
-    sudo apt-get update
-    sudo apt-get install -y containerd
-    sudo ctr image pull --user "${tigera_registry_user}:${tigera_registry_password}" quay.io/tigera/cnx-node:v${calico_early_version}
+    apt-get update
+    apt-get install -y containerd
+    https_proxy="${https_proxy}" ctr image pull --user "${tigera_registry_secret}" quay.io/tigera/cnx-node:v${calico_early_version}
   path: /tmp/setup-env.sh
   permissions: "0744"
   owner: root:root
 - content: |
     PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
-    HTTP_PROXY="http://squid.internal:3128"
-    HTTPS_PROXY="http://squid.internal:3128"
-    http_proxy="http://squid.internal:3128"
-    https_proxy="http://squid.internal:3128"
+    HTTP_PROXY="${http_proxy}"
+    HTTPS_PROXY="${https_proxy}"
+    http_proxy="${http_proxy}"
+    https_proxy="${https_proxy}"
+    NO_PROXY="${no_proxy}"
+    no_proxy="${no_proxy}"
   path: /etc/environment
+  permissions: "0644"
+  owner: root:root
+- content: |
+    [Service]
+    Environment="HTTP_PROXY=${http_proxy}" "HTTPS_PROXY=${http_proxy}" "NO_PROXY=${no_proxy}"
+  path: /etc/systemd/system/containerd.service.d/proxy.conf
   permissions: "0644"
   owner: root:root
 - content: |
@@ -102,10 +97,10 @@ write_files:
     kind: EarlyNetworkingConfiguration
     spec:
       nodes:
-      - asNumber: 64512
+      - asNumber: 645{{node_final_octet}}
         interfaceAddresses:
-        - {{node0_interface1_addr}}
-        - {{node0_interface2_addr}}
+        - {{node_interface1_addr}}
+        - {{node_interface2_addr}}
         labels:
           rack: rack1
         peerings:
@@ -114,111 +109,87 @@ write_files:
         - peerASNumber: 65502
           peerIP: ${switch_network_sw2}
         stableAddress:
-          address: 10.30.30.12
-      - asNumber: 64513
-        interfaceAddresses:
-        - {{node1_interface1_addr}}
-        - {{node1_interface2_addr}}
-        labels:
-          rack: rack1
-        peerings:
-        - peerASNumber: 65501
-          peerIP: ${switch_network_sw1}
-        - peerASNumber: 65502
-          peerIP: ${switch_network_sw2}
-        stableAddress:
-          address: 10.30.30.13
-      - asNumber: 64515
-        interfaceAddresses:
-        - {{node2_interface1_addr}}
-        - {{node2_interface2_addr}}
-        labels:
-          rack: rack1
-        peerings:
-        - peerASNumber: 65501
-          peerIP: ${switch_network_sw1}
-        - peerASNumber: 65502
-          peerIP: ${switch_network_sw2}
-        stableAddress:
-          address: 10.30.30.15
-      - asNumber: 64516
-        interfaceAddresses:
-        - {{node3_interface1_addr}}
-        - {{node3_interface2_addr}}
-        labels:
-          rack: rack1
-        peerings:
-        - peerASNumber: 65501
-          peerIP: ${switch_network_sw1}
-        - peerASNumber: 65502
-          peerIP: ${switch_network_sw2}
-        stableAddress:
-          address: 10.30.30.16
-      - asNumber: 64517
-        interfaceAddresses:
-        - {{node4_interface1_addr}}
-        - {{node4_interface2_addr}}
-        labels:
-          rack: rack1
-        peerings:
-        - peerASNumber: 65501
-          peerIP: ${switch_network_sw1}
-        - peerASNumber: 65502
-          peerIP: ${switch_network_sw2}
-        stableAddress:
-          address: 10.30.30.17
+          address: 10.30.30.{{node_final_octet}}
   path: /tmp/calico_early.tpl
   owner: root:root
   permissions: '644'
 - content: |
     #!/bin/env python3
-    import yaml
+    import shlex
     import subprocess
-    import json
+
+    import yaml
+
+
+    def get_nics():
+        links = subprocess.check_output(shlex.split("ip -j link show"))
+        return yaml.safe_load(links)
+
+
+    def nic_addresses(ip_json, ifname):
+        for ip in ip_json:
+            if ip["ifname"] == ifname:
+                for ifc in ip["addr_info"]:
+                    yield f'{ifc["local"]}/{ifc["prefixlen"]}'
 
 
     def reconfigure_netplan():
         netplan = None
-        subprocess.check_call("sudo dhclient".split())
+        links = get_nics()
+        for nic in links[2:]:  # update nic2 and nic3
+            ifname = nic["ifname"]
+            subprocess.check_call(shlex.split(f"dhclient -r {ifname}"))
+            subprocess.check_call(shlex.split(f"dhclient {ifname}"))
 
-        with open('/etc/netplan/50-cloud-init.yaml', 'r') as fh:
+        with open("/etc/netplan/50-cloud-init.yaml", "r") as fh:
             netplan = yaml.safe_load(fh.read())
-        ip_json = json.loads(subprocess.check_output("ip -j -4 a".split()).decode('utf-8'))
-        netplan['network']['ethernets'].update({
-                "ens192": {
-                    "routes": [{
-                        "to": "default",
-                        "via": "${switch_network_sw1}"
-                    }],
-                    "addresses": [[ip['addr_info'][0]['local'] for ip in ip_json if ip['ifname'] == "ens192"][0] + "/24"]
+        ip_json = yaml.safe_load(subprocess.check_output("ip -j -4 a".split()).decode("utf-8"))
+        netplan["network"]["ethernets"].update(
+            {
+                links[2]["ifname"]: {
+                    "addresses": list(nic_addresses(ip_json, links[2]["ifname"])),
+                    "set-name": links[2]["ifname"],
+                    "match": {"macaddress": links[2]["address"]},
+                    "routes": [{"to": "default", "via": "${switch_network_sw1}"}],
                 },
-                "ens224": {
-                    "routes": [{
-                        "to": "0.0.0.0/1",
-                        "via": "${switch_network_sw2}"
-                    }],
-                    "addresses": [[ip['addr_info'][0]['local'] for ip in ip_json if ip['ifname'] == "ens224"][0] + "/24"]
-                }
-            })
-        with open('/etc/netplan/50-cloud-init.yaml', 'w') as fh:
+                links[3]["ifname"]: {
+                    "addresses": list(nic_addresses(ip_json, links[3]["ifname"])),
+                    "set-name": links[3]["ifname"],
+                    "match": {"macaddress": links[3]["address"]},
+                    "routes": [
+                        {"to": "0.0.0.0/1", "via": "${switch_network_sw2}"},
+                        {"to": "128.0.0.0/1", "via": "${switch_network_sw2}"},
+                    ],
+                },
+            }
+        )
+        with open("/etc/netplan/50-cloud-init.yaml", "w") as fh:
             fh.write(yaml.dump(netplan))
         print("Wrote updated netplan!")
 
-        subprocess.call("sudo netplan apply".split())
+        subprocess.call("netplan apply".split())
+
 
     if __name__ == "__main__":
         reconfigure_netplan()
-  path: /tmp/reconfigre_netplan.py
+  path: /tmp/reconfigure_netplan.py
   permissions: '744'
   owner: root:root
 - content: |
     #!/bin/env python3
-    import jinja2
-    import json
     import argparse
     import subprocess
+    import time
+
+    import jinja2
+    import yaml
 
     parser = argparse.ArgumentParser("Calico Early Renderer")
+
+
+    def get_ips():
+        return yaml.safe_load(subprocess.check_output("ip -j -4 a".split()))
+
 
     def render_calico_early(args):
         calico_early_template = None
@@ -226,19 +197,28 @@ write_files:
         with open("/tmp/calico_early.tpl", "r") as fh:
             calico_early_template = jinja2.Template(fh.read())
 
-        ip_json = json.loads(subprocess.check_output("ip -j -4 a".split()).decode("utf-8"))
-        ip_ens192 = [[ip["addr_info"][0]["local"] for ip in ip_json if ip["ifname"] == "ens192"][0]][0]
-        ip_ens224 = [[ip["addr_info"][0]["local"] for ip in ip_json if ip["ifname"] == "ens224"][0]][0]
-        hostname = json.loads(subprocess.check_output("hostnamectl status --json short".split()).decode("utf-8"))['StaticHostname']
-        node_info = {
-            f"node{hostname.split('-')[2]}_interface1_addr": ip_ens192,
-            f"node{hostname.split('-')[2]}_interface2_addr": ip_ens224,
+        ips = get_ips()
+        if len(ips) < 4:
+            time.sleep(5)
+            ips = get_ips()
+            print("Waiting for all nics")
+
+        ip_2, ip_3 = [ips[nic]["addr_info"][0]["local"] for nic in (2, 3)]
+        hostname = yaml.safe_load(subprocess.check_output("hostnamectl status --json short".split()))[
+            "StaticHostname"
+        ]
+        host_id = int(hostname.split("-")[2])
+        context = {
+            "node_interface1_addr": ip_2,
+            "node_interface2_addr": ip_3,
+            "node_final_octet": host_id + 12,
         }
 
         with open("/calico-early/cfg.yaml", "w") as fh:
-            fh.write(calico_early_template.render(**node_info))
+            fh.write(calico_early_template.render(**context))
 
         print("Rendered calico early")
+
 
     if __name__ == "__main__":
         args = parser.parse_args()
@@ -249,13 +229,14 @@ write_files:
 output: {all: '| tee -a /var/log/cloud-init-output.log'}
 runcmd:
 # - ["/tmp/configure_gateway.py", "--cidr", "10.10.10.0/24", "--gateway", "10.10.10.3"]
+- [set, -e]
 - [/tmp/setup-env.sh]
-- [/tmp/reconfigre_netplan.py]
+- [/tmp/reconfigure_netplan.py]
 - [/tmp/render_calico_early.py]
-- sudo systemctl start calico-early
-- sudo systemctl start calico-early-wait
-- iptables -t nat -A POSTROUTING -s 192.168.0.0/16 ! -d 10.30.30.0/24 -o eth0 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens192") | .addr_info[0].local')
-- iptables -t nat -A POSTROUTING -s 10.30.30.0/24 ! -d 10.30.30.0/24 -o eth0 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens192") | .addr_info[0].local')
+- systemctl start calico-early
+- systemctl start calico-early-wait
+- iptables -t nat -A POSTROUTING -s 10.30.30.0/24 ! -d 10.30.30.0/24 -o ens224 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens224") | .addr_info[0].local')
+- iptables -t nat -A POSTROUTING -s 10.30.30.0/24 ! -d 10.30.30.0/24 -o ens256 -j SNAT --to $(ip -j -4 a | jq -r '.[] | select(.ifname=="ens256") | .addr_info[0].local')
 # power_state:
 #   delay: 0
 #   mode: reboot

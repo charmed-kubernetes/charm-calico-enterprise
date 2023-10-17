@@ -38,7 +38,8 @@ spec:
    labels:
      rack: r"""
 
-TEST_CONFIGURE_BGP_BGPPEER_YAML = """apiVersion: crd.projectcalico.org/v1
+TEST_CONFIGURE_BGP_BGPPEER_YAML = """
+apiVersion: crd.projectcalico.org/v1
 kind: BGPPeer
 metadata:
   name: r-30.30.30.30
@@ -150,24 +151,24 @@ def test_is_kubeconfig_available(harness, charm):
 
 def test_get_service_cidr(harness, charm):
     harness.disable_hooks()
-    rel_id = harness.add_relation("tigera", "tigera")
-    harness.add_relation_unit(rel_id, "tigera/0")
-    assert not charm.tigera_peer_data("service-cidr")
+    rel_id = harness.add_relation("calico-enterprise", "calico-enterprise")
+    harness.add_relation_unit(rel_id, "calico-enterprise/0")
+    assert not charm.calico_enterprise_peer_data("service-cidr")
 
     harness.update_relation_data(
         rel_id,
-        "tigera/0",
+        "calico-enterprise/0",
         {"service-cidr": DEFAULT_SERVICE_CIDR},
     )
-    assert charm.tigera_peer_data("service-cidr") == DEFAULT_SERVICE_CIDR
+    assert charm.calico_enterprise_peer_data("service-cidr") == DEFAULT_SERVICE_CIDR
 
-    harness.add_relation_unit(rel_id, "tigera/1")
+    harness.add_relation_unit(rel_id, "calico-enterprise/1")
     harness.update_relation_data(
         rel_id,
-        "tigera/1",
+        "calico-enterprise/1",
         {"service-cidr": "working"},
     )
-    assert charm.tigera_peer_data("service-cidr") is None
+    assert charm.calico_enterprise_peer_data("service-cidr") is None
 
 
 def test_configure_cni_relation(harness, charm):

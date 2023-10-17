@@ -1,64 +1,44 @@
 description: Overlay for attaching the current charm
 applications:
-  calico: null
   kubernetes-control-plane:
     options:
       allow-privileged: "true"
   kubernetes-worker:
     num_units: 3
-  tigera:
+    to:
+      - "1"
+      - "2"
+      - "3"
+  calico: null
+  calico-enterprise:
     charm: {{charm}}
+    channel: null
     series: jammy
-    resources:
-      calico-crd-manifest: {{calico_crd_manifest}}
-      calico-enterprise-manifest: {{calico_install_manifest}}
     options:
       stable_ip_cidr: 10.30.30.0/24
-      nic_autodetection_cidrs: "10.10.10.0/24,10.10.20.0/24"
+      nic_autodetection_cidrs: {{nic_autodetection_cidrs}}
       image_registry_secret: {{tigera_reg_secret}}
-      license: {{tigera_ee_license}}
+      license: |- 
+        {{tigera_ee_license|indent(8)}}
       # tigera_features: "early-networking"
-      bgp_parameters: | 
-        - hostname: k8s-node-0
-          asn: 65000
-          stableAddress: 10.30.30.12
-          rack: rack1
-          interfaces:
-          - IP: 10.10.10.12
-            peerIP: 10.10.10.3
-            peerASN: 65021
-          - IP: 10.10.20.12
-            peerIP: 10.10.20.3
-            peerASN: 65031
-        - hostname: k8s-node-1
-          asn: 65001
-          stableAddress: 10.30.30.13
-          rack: rack1
-          interfaces:
-          - IP: 10.10.10.13
-            peerIP: 10.10.10.3
-            peerASN: 65021
-          - IP: 10.10.20.13
-            peerIP: 10.10.20.3
-            peerASN: 65031
-        - hostname: k8s-node-2
-          asn: 65002
-          stableAddress: 10.30.30.14
-          rack: rack1
-          interfaces:
-          - IP: 10.10.10.14
-            peerIP: 10.10.10.3
-            peerASN: 65021
-          - IP: 10.10.20.14
-            peerIP: 10.10.20.3
-            peerASN: 65031
-    bindings:
-      "": bgp
+      bgp_parameters: |-
+        {{bgp_parameters|indent(8)}}
+  easyrsa:
+    to: 
+      - "0"
   ubuntu:
     charm: ubuntu
     num_units: 1
+    to:
+      - "4"
 relations:
-- - tigera:cni
+- - calico-enterprise:cni
   - kubernetes-control-plane:cni
-- - tigera:cni
+- - calico-enterprise:cni
   - kubernetes-worker:cni
+machines:
+  "0": null
+  "1": null
+  "2": null
+  "3": null
+  "4": null

@@ -19,3 +19,81 @@ jobs:
       python: "['3.8', '3.9', '3.10', '3.11']"
     needs: 
       - call-inclusive-naming-check
+
+  integration-test:
+    name: VSphere Integration Test
+    needs: 
+      - lint-unit
+    runs-on: self-hosted
+    env:
+      JUJU_MODEL: calico-enterprise
+      CHARM_TIGERA_EE_LICENSE: ${{ secrets.CHARM_TIGERA_EE_LICENSE }}
+      CHARM_TIGERA_EE_REG_SECRET: ${{ secrets.CHARM_TIGERA_EE_REG_SECRET }}
+      CREDENTIALS_YAML_CONTENT: ${{ secrets.CREDENTIALS_YAML }}
+      CLOUDS_YAML_CONTENT: ${{ secrets.CLOUDS_YAML }}
+
+    timeout-minutes: 90
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+
+      - name: Install Tools
+        run: tests/integration/setup.sh install_tools
+
+      - name: Generate SSH Keys
+        run: tests/integration/setup.sh generate_ssh_keys
+
+      - name: Apply cloud credentials
+        run: tests/integration/setup.sh apply_cloud_credentials
+
+      - name: Terraform Create Cloud
+        run: tests/integration/setup.sh terraform_cloud
+
+      - name: Setup operator environment
+        uses: charmed-kubernetes/actions-operator@main
+        with:
+          provider: manual-cloud
+          juju-channel: 3.1/stable
+          credentials-yaml: ${{ secrets.CREDENTIALS_YAML }}
+          clouds-yaml: ${{ env.MANUAL_CLOUD_YAML }}
+          bootstrap-constraints: ""
+          bootstrap-options: ""
+
+      - name: Juju Deploy DualTor Charms
+        run: tests/integration/setup.sh juju_create_manual_model
+
+      - name: Run test
+        run: tox -e integration -- --basetemp=/home/ubuntu/pytest --crash-dump=on-failure
+
+      - name: Setup Debug Artifact Collection
+        if: ${{ failure() }}
+        run: mkdir tmp
+
+      - name: Collect Charmcraft Errors
+        if: ${{ failure() }}
+        run: |
+          mv /home/ubuntu/.local/state/charmcraft/log/* tmp/ | true
+
+      - name: Collect Juju Status
+        if: ${{ failure() }}
+        run: tests/integration/setup.sh juju_status
+
+      - name: Upload debug artifacts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-run-artifacts
+          path: tmp
+
+      - name: Juju Teardown
+        if: ${{ always() }}
+        run: |
+          juju destroy-model ${JUJU_MODEL} --force --destroy-storage --no-prompt
+
+      - name: Terraform Teardown
+        if: ${{ always() }}
+        run: tests/integration/setup.sh terraform_teardown

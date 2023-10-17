@@ -5,8 +5,10 @@ import logging
 import re
 import shlex
 from pathlib import Path
+from typing import Iterable
 
 import pytest
+import yaml
 from lightkube.codecs import load_all_yaml
 from pytest_operator.plugin import OpsTest
 from tenacity import (
@@ -28,34 +30,45 @@ PING_LOSS_RE = re.compile(r"(?:([\d\.]+)% packet loss)")
 
 @pytest.mark.abort_on_fail
 @pytest.mark.skip_if_deployed
-async def test_build_and_deploy(ops_test: OpsTest, tigera_ee_reg_secret, tigera_ee_license):
-    log.info("Build charm...")
-    # TODO: Undo this
-    charm = await ops_test.build_charm(".")
+async def test_build_and_deploy(
+    ops_test: OpsTest,
+    tigera_ee_reg_secret,
+    tigera_ee_license,
+    bgp_parameters,
+    nic_autodetection_cidrs: Iterable[str],
+):
+    charm = next(Path(".").glob("calico-enterprise*.charm"), None)
+    if not charm:
+        log.info("Building Charm...")
+        charm = await ops_test.build_charm(".")
 
     overlays = [
+        ops_test.Bundle("kubernetes-core", channel="edge"),
         Path("tests/data/charm.yaml"),
     ]
 
     log.info("Rendering overlays...")
-    # TODO: Undo this
     bundle, *overlays = await ops_test.async_render_bundles(
         *overlays,
-        charm=charm,
+        charm=charm.resolve(),
+        calico_crd_manifest=0,
+        calico_install_manifest=0,
+        bgp_parameters=yaml.dump(bgp_parameters),
+        nic_autodetection_cidrs=",".join(nic_autodetection_cidrs),
         tigera_reg_secret=tigera_ee_reg_secret,
         tigera_ee_license=tigera_ee_license,
     )
 
-    log.info("Deploy charm...")
-    # TODO: Undo this
     juju_cmd = (
         f"deploy --map-machines=existing -m {ops_test.model_full_name} {bundle} --trust "
         + " ".join(f"--overlay={f}" for f in overlays)
     )
-    print(juju_cmd)
+    log.info("Deploy charm...")
 
     await ops_test.juju(*shlex.split(juju_cmd), check=True, fail_msg="Bundle deploy failed")
-    await ops_test.model.block_until(lambda: "tigera" in ops_test.model.applications, timeout=60)
+    await ops_test.model.block_until(
+        lambda: "calico-enterprise" in ops_test.model.applications, timeout=60 * 5
+    )
 
     await ops_test.model.wait_for_idle(status="active", timeout=60 * 60)
 
@@ -380,8 +393,8 @@ async def test_network_policies(client, kubectl_exec, network_policies):
         wait=wait_fixed(1),
         before=before_log(log, logging.INFO),
     )
-    async def check_wget(url, client, msg):
-        stdout = await wget(kubectl_exec, client, url)
+    async def check_wget(url, pod, msg):
+        stdout = await wget(kubectl_exec, pod, url)
         assert msg in stdout
 
     log.info("Checking pods connectivity...")
@@ -400,7 +413,7 @@ async def test_network_policies(client, kubectl_exec, network_policies):
         await check_wget("nginx.netpolicy", blocked_pod, "wget: download timed out")
     finally:
         log.info("Removing NetworkPolicy...")
-        for obj in policies:
+        for obj in reversed(policies):
             client.delete(type(obj), obj.metadata.name, namespace=obj.metadata.namespace)
 
 
@@ -490,13 +503,13 @@ async def ping(kubectl_exec, pinger, pingee, namespace):
     return stdout
 
 
-async def wget(kubectl_exec, client, url):
+async def wget(kubectl_exec, pod, url):
     wget_cmd = f"wget {url} -T 10"
-    args = client.metadata.name, client.metadata.namespace, wget_cmd
+    args = pod.metadata.name, pod.metadata.namespace, wget_cmd
     rc, stdout, stderr = await kubectl_exec(*args, check=False)
     if rc == 0:
         rm_cmd = "rm index.html"
-        args = client.metadata.name, client.metadata.namespace, rm_cmd
+        args = pod.metadata.name, pod.metadata.namespace, rm_cmd
         await kubectl_exec(*args, check=False)
     return stdout + stderr
 

@@ -12,26 +12,24 @@ develop a new k8s charm using the Operator Framework:
 https://discourse.charmhub.io/t/4208
 """
 
+import binascii
 import ipaddress
 import logging
 import os
 import pathlib
 import tempfile
 import time
-import traceback
 from base64 import b64decode
+from dataclasses import dataclass
 from subprocess import CalledProcessError, check_output
+from typing import Optional, Tuple
 
 import yaml
-from conctl import getContainerRuntimeCtl
 from jinja2 import Environment, FileSystemLoader
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, ModelError, WaitingStatus
-
-# Log messages can be retrieved using juju debug-log
-logger = logging.getLogger(__name__)
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, StatusBase, WaitingStatus
 
 VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
@@ -39,9 +37,18 @@ VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 TIGERA_DISTRO_VERSIONS = {"1.26": "3.16.1", "1.25": "3.15.2"}
 KUBECONFIG_PATH = "/root/.kube/config"
 PLUGINS_PATH = "/usr/local/bin"
+EE_MANIFESTS = pathlib.Path("upstream/ee")
 
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class RegistrySecret:
+    """Holds username and password for registry secret."""
+
+    username: str
+    password: str
 
 
 class TigeraCalicoError(Exception):
@@ -78,7 +85,7 @@ class TigeraCharm(CharmBase):
         self.framework.observe(self.on.upgrade_charm, self.on_upgrade_charm)
         self.framework.observe(self.on.cni_relation_joined, self.on_cni_relation_joined)
         self.framework.observe(self.on.cni_relation_changed, self.on_cni_relation_changed)
-        self.framework.observe(self.on.tigera_relation_changed, self.on_config_changed)
+        self.framework.observe(self.on.calico_enterprise_relation_changed, self.on_config_changed)
         self.framework.observe(self.on.start, self.on_config_changed)
         self.framework.observe(self.on.upgrade_charm, self.on_config_changed)
 
@@ -86,11 +93,11 @@ class TigeraCharm(CharmBase):
         self.stored.set_default(pod_restart_needed=False)
         self.stored.set_default(tigera_cni_configured=False)
 
-        try:
-            self.CTL = getContainerRuntimeCtl()
-        except RuntimeError:
-            logger.error(traceback.format_exc())
-            raise TigeraCalicoError(0, "K8s and tigera version mismatch")
+        # try:
+        #     self.CTL = getContainerRuntimeCtl()
+        # except RuntimeError:
+        #     log.error(traceback.format_exc())
+        #     raise TigeraCalicoError(0, "K8s and tigera version mismatch")
 
     #######################
     ### Support Methods ###
@@ -117,12 +124,12 @@ class TigeraCharm(CharmBase):
         """Return image registry from config."""
         return self.model.config["image_registry"]
 
-    def cni_to_tigera(self, event):
-        """Repeat received CNI relation data to each kube-ovn unit.
+    def cni_to_calico_enterprise(self, event):
+        """Repeat received CNI relation data to each calico-enterprise unit.
 
         CNI relation data is received over the cni relation only from
-        kubernetes-control-plane units.  the kube-ovn peer relation
-        shares the value around to each kube-ovn unit.
+        kubernetes-control-plane units. The calico-enterprise peer relation
+        shares the value around to each  unit.
         """
         log.debug("Sending CNI data over relation")
         for key in ["service-cidr", "image-registry"]:
@@ -130,7 +137,7 @@ class TigeraCharm(CharmBase):
             log.debug("CNI data: %s", cni_data)
             if not cni_data:
                 continue
-            for relation in self.model.relations["tigera"]:
+            for relation in self.model.relations["calico-enterprise"]:
                 relation.data[self.unit][key] = cni_data
 
     def configure_cni_relation(self):
@@ -148,13 +155,13 @@ class TigeraCharm(CharmBase):
         template.stream(**kwargs).dump(destination)
         return destination
 
-    def tigera_peer_data(self, key):
-        """Return the agreed data associated with the key from each tigera unit including self.
+    def calico_enterprise_peer_data(self, key):
+        """Return the agreed data associated with the key from each calico-enterprise unit including self.
 
         If there isn't unity in the relation, return None.
         """
         joined_data = set()
-        for relation in self.model.relations["tigera"]:
+        for relation in self.model.relations["calico-enterprise"]:
             for unit in relation.units | {self.unit}:
                 data = relation.data[unit].get(key)
                 joined_data.add(data)
@@ -169,6 +176,21 @@ class TigeraCharm(CharmBase):
     def bgp_parameters(self):
         """Return bgp parameter as a dict."""
         return yaml.safe_load(self.model.config["bgp_parameters"])
+
+    def image_registry_secret(self) -> Tuple[Optional[RegistrySecret], str]:
+        """Read Image Registry secret to username:password."""
+        value = self.model.config["image_registry_secret"]
+        if not value:
+            return None, "Registry secret is required"
+        try:
+            decoded = b64decode(value).decode()
+        except (binascii.Error, UnicodeDecodeError):
+            # secret is not b64encoded plaintext, treat as plaintext
+            decoded = value
+        split = decoded.split(":")
+        if len(split) != 2:
+            return None, "Registry secret isn't formatted as <user:pass>"
+        return RegistrySecret(*split), ""
 
     #######################
     ### Tigera  Methods ###
@@ -185,8 +207,9 @@ class TigeraCharm(CharmBase):
             self.unit.status = BlockedStatus("BGP configuration is required.")
             return False
 
-        if not self.model.config["image_registry_secret"]:
-            self.unit.status = BlockedStatus("Registry secret is required")
+        val, err = self.image_registry_secret()
+        if not val:
+            self.unit.status = BlockedStatus(err)
             return False
 
         if not self.model.config["license"]:
@@ -231,6 +254,16 @@ class TigeraCharm(CharmBase):
             self.kubectl("version", "--short").split("Server Version: v")[1].split(".")[:2]
         )
 
+    @property
+    def tigera_version(self):
+        """Returns the tigera installation version."""
+        return (EE_MANIFESTS / "version").read_text()
+
+    @property
+    def manifests(self):
+        """Load charm tigera manifests based on supported versions in the charm."""
+        return EE_MANIFESTS / "manifests" / self.tigera_version
+
     def apply_tigera_operator(self):
         """Apply the tigera operator yaml.
 
@@ -239,38 +272,47 @@ class TigeraCharm(CharmBase):
         if not pathlib.Path(KUBECONFIG_PATH).exists():
             self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
             return False
-        try:
-            installation_manifest = self.model.resources.fetch("calico-enterprise-manifest")
-            crds_manifest = self.model.resources.fetch("calico-crd-manifest")
-        except ModelError:
-            self.unit.status = BlockedStatus(
-                "Could not get tigera manifest resources. Check juju debug-log."
-            )
-            return False
+        installation_manifest = self.manifests / "tigera-operator.yaml"
+        crds_manifest = self.manifests / "custom-resources.yaml"
         try:
             self.kubectl("create", "-f", installation_manifest)
             self.kubectl("create", "-f", crds_manifest)
         except CalledProcessError:
             # TODO implement a check which checks for tigera resources
-            logger.warn("Kubectl create failed - tigera operator my not be deployed.")
+            log.warning("Kubectl create failed - tigera operator may not be deployed.")
             return True
 
-    def check_tigera_operator_deployment_status(self):
-        """Check if  tigera operator is ready.
+    def tigera_operator_deployment_status(self) -> StatusBase:
+        """Check if tigera operator is ready.
 
-        Returns True if the tigera is ready.
+        returns error in the event of a failed state.
         """
         output = self.kubectl(
             "get",
             "pods",
             "-l",
-            "app=tigera-operator",
+            "k8s-app=tigera-operator",
             "-n",
             "tigera-operator",
             "-o",
-            """'jsonpath={..status.conditions[?(@.type=="Ready")].status}'""",
+            "jsonpath={.items}",
         )
-        return True if "True" in output else False
+        pods = yaml.safe_load(output)
+        if len(pods) == 0:
+            return WaitingStatus("tigera-operator POD not found")
+        elif len(pods) > 1:
+            return WaitingStatus(f"Too many tigera-operator PODs (num: {len(pods)})")
+        status = pods[0]["status"]
+        running = status["phase"] == "Running"
+        healthy = all(_["status"] == "True" for _ in status["conditions"])
+        if not running:
+            return WaitingStatus(f"tigera-operator POD not running (phase: {status['phase']})")
+        elif not healthy:
+            failed = ", ".join(_["type"] for _ in status["conditions"] if _["status"] != "True")
+            return WaitingStatus(
+                f"tigera-operator POD conditions not healthy (conditions: {failed})"
+            )
+        return ActiveStatus("Ready")
 
     """
     def pull_cnx_node_image(self):
@@ -280,14 +322,14 @@ class TigeraCharm(CharmBase):
             self.unit.status = MaintenanceStatus('Pulling cnx-node image')
             image = self.config['cnx-node-image']NamedTemporaryFile
             set_http_proxy()
-            CTL.pull(image)
+            self.CTL.pull(image)
         else:
             status.maintenance('Loading calico-node image')
             unzipped = '/tmp/calico-node-image.tar'
             with gzip.open(image, 'rb') as f_in:
                 with open(unzipped, 'wb') as f_out:
                     f_out.write(f_in.read())
-            CTL.load(unzipped)
+            self.CTL.load(unzipped)
     """
 
     def check_tigera_status(self):
@@ -325,7 +367,7 @@ class TigeraCharm(CharmBase):
 
     def waiting_for_cni_relation(self):
         """Check if we should wait on CNI relation or all data is available."""
-        service_cidr = self.tigera_peer_data("service-cidr")
+        service_cidr = self.calico_enterprise_peer_data("service-cidr")
         registry = self.registry
         return not self.is_kubeconfig_available() or not service_cidr or not registry
 
@@ -348,7 +390,7 @@ class TigeraCharm(CharmBase):
             try:
                 self.kubectl("label", "node", node["hostname"], f"rack={node['rack']}")
             except CalledProcessError:
-                logger.warn(f"Node labelling failed. Does {node['hostname']} exist?")
+                log.warning(f"Node labelling failed. Does {node['hostname']} exist?")
                 pass
 
         self.render_template(
@@ -396,6 +438,9 @@ class TigeraCharm(CharmBase):
         """Set active if cni is configured."""
         if self.stored.tigera_cni_configured:
             self.unit.status = ActiveStatus()
+            self.unit.set_workload_version(self.tigera_version)
+            if self.unit.is_leader():
+                self.app.status = ActiveStatus(self.tigera_version)
 
     ###########################
     ### Charm Event Methods ###
@@ -417,17 +462,19 @@ class TigeraCharm(CharmBase):
         2) If kubeconfig and CNI relation exist
         """
         if isinstance(self.unit.status, ActiveStatus):
-            log.info("on_update_status: unit not in active status: {self.unit.status}")
+            log.info(f"on_update_status: unit not in active status: {self.unit.status}")
         if self.waiting_for_cni_relation():
             self.unit.status = WaitingStatus("Waiting for CNI relation")
             return
+
+        self.unit.status = self.tigera_operator_deployment_status()
 
     def on_cni_relation_changed(self, event):
         """Run CNI relation changed hook."""
         if not self.stored.tigera_configured:
             self.on_config_changed(event)
 
-        self.cni_to_tigera(event)
+        self.cni_to_calico_enterprise(event)
         self.configure_cni_relation()
         self.set_active_status()
 
@@ -436,7 +483,7 @@ class TigeraCharm(CharmBase):
         if not self.stored.tigera_configured:
             self.on_config_changed(event)
 
-        self.cni_to_tigera(event)
+        self.cni_to_calico_enterprise(event)
         self.configure_cni_relation()
         self.set_active_status()
 
@@ -475,7 +522,7 @@ class TigeraCharm(CharmBase):
             # TODO: Enters a defer loop
             # event.defer()
             return
-        service_cidr = self.tigera_peer_data("service-cidr")
+        service_cidr = self.calico_enterprise_peer_data("service-cidr")
 
         if self.waiting_for_cni_relation():
             self.unit.status = WaitingStatus("Waiting for CNI relation")
@@ -488,7 +535,8 @@ class TigeraCharm(CharmBase):
             return
 
         self.unit.status = MaintenanceStatus("Configuring image secret and license file...")
-        if self.model.config["image_registry"] and self.model.config["image_registry_secret"]:
+        secret, err = self.image_registry_secret()
+        if self.model.config["image_registry"] and secret:
             try:
                 self.kubectl(
                     "delete",
@@ -504,16 +552,16 @@ class TigeraCharm(CharmBase):
                 "secret",
                 "docker-registry",
                 "tigera-pull-secret",
-                f"--docker-username={self.model.config['image_registry_secret'].split(':')[0]}",
-                f"--docker-password={self.model.config['image_registry_secret'].split(':')[1]}",
+                f"--docker-username={secret.username}",
+                f"--docker-password={secret.password}",
                 f"--docker-server={self.model.config['image_registry']}",
                 "-n",
                 "tigera-operator",
             )
-        license = tempfile.NamedTemporaryFile("w", delete=False)
-        license.write(b64decode(self.model.config["license"]).rstrip().decode("utf-8"))
-        license.flush()
-        self.kubectl("apply", "-f", license.name)
+        with tempfile.NamedTemporaryFile("w") as license:
+            license.write(b64decode(self.model.config["license"]).rstrip().decode("utf-8"))
+            license.flush()
+            self.kubectl("apply", "-f", license.name)
 
         self.unit.status = MaintenanceStatus("Generating bgp yamls...")
         self.configure_bgp()
@@ -536,11 +584,16 @@ class TigeraCharm(CharmBase):
             )
             return
 
+        secret, err = self.image_registry_secret()
+        if not secret:
+            self.unit.status = BlockedStatus(err)
+            return
+
         self.render_template(
             "calico_enterprise_install.yaml.j2",
             "/tmp/calico_enterprise_install.yaml",
             image_registry=self.model.config["image_registry"],
-            image_registry_secret=self.model.config["image_registry_secret"],
+            image_registry_secret=f"{secret.username}:{secret.password}",
             image_path=self.model.config["image_path"],
             image_prefix=self.model.config["image_prefix"],
             nic_autodetection=nic_autodetection,

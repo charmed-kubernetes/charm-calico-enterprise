@@ -21,7 +21,7 @@ def kubectl(request):
         yield mocked
 
 
-@pytest.fixture(autouse=True)
-def conctl():
-    with mock.patch("charm.getContainerRuntimeCtl", autospec=True) as mock_conctl:
-        yield mock_conctl.return_value
+# @pytest.fixture(autouse=True)
+# def conctl():
+#     with mock.patch("charm.getContainerRuntimeCtl", autospec=True) as mock_conctl:
+#         yield mock_conctl.return_value
