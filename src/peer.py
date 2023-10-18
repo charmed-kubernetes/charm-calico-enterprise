@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import List, Mapping, Optional, Set
 
 import yaml
-from ops.charm import EventBase, EventSource
-from ops.framework import Framework, Object, ObjectEvents
+from ops.charm import CharmBase, EventBase, EventSource
+from ops.framework import Object, ObjectEvents
 from pydantic import BaseModel, Field, ValidationError, validator
 
 log = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ class CalicoEnterprisePeer(Object):
 
     on = CalicoEnterprisePeerEvents()
 
-    def __init__(self, parent: Framework | Object, endpoint="calico-enterprise"):
+    def __init__(self, parent: CharmBase, endpoint="calico-enterprise"):
         super().__init__(parent, f"relation-{endpoint}")
         self.endpoint = endpoint
 
