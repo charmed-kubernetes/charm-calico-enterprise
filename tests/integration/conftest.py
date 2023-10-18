@@ -217,29 +217,6 @@ def tigera_ee_reg_secret() -> str:
 
 
 @pytest.fixture(scope="module")
-async def bgp_parameters(ops_test) -> list:
-    params = []
-    for machine in ops_test.model.machines.values():
-        hostname = await machine.ssh("hostname")
-        cfg_yaml_contents = await machine.ssh("cat /calico-early/cfg.yaml")
-        cfg_yaml = yaml.safe_load(cfg_yaml_contents)
-        node = cfg_yaml["spec"]["nodes"][0]
-        params.append(
-            {
-                "hostname": hostname.strip(),
-                "asn": node["asNumber"],
-                "stableAddress": node["stableAddress"]["address"],
-                "rack": node["labels"]["rack"],
-                "interfaces": [
-                    {"IP": addr, "peerIP": peer["peerIP"], "peerASN": peer["peerASNumber"]}
-                    for addr, peer in zip(node["interfaceAddresses"], node["peerings"])
-                ],
-            }
-        )
-    return params
-
-
-@pytest.fixture(scope="module")
 async def nic_autodetection_cidrs(ops_test) -> Iterable[str]:
     rc, stdout, stderr = await ops_test.juju("spaces", "--format=yaml")
     if rc != 0:

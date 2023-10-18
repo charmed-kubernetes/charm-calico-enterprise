@@ -1,13 +1,13 @@
 import unittest.mock as mock
 
 import pytest
-from charm import TigeraCharm
+from charm import CalicoEnterpriseCharm
 
 
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
-        "skip_kubectl_mock: mark tests which do not mock out TigeraCharm.kubectl",
+        "skip_kubectl_mock: mark tests which do not mock out CalicoEnterpriseCharm.kubectl",
     )
 
 
@@ -15,9 +15,9 @@ def pytest_configure(config):
 def kubectl(request):
     """Mock out kubectl."""
     if "skip_kubectl_mock" in request.keywords:
-        yield TigeraCharm.kubectl
+        yield CalicoEnterpriseCharm.kubectl
         return
-    with mock.patch("charm.TigeraCharm.kubectl", autospec=True) as mocked:
+    with mock.patch("charm.CalicoEnterpriseCharm.kubectl", autospec=True) as mocked:
         yield mocked
 
 

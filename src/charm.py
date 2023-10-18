@@ -30,6 +30,7 @@ from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, StatusBase, WaitingStatus
+from peer import CalicoEnterprisePeer
 
 VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
@@ -70,7 +71,7 @@ class TigeraCalicoError(Exception):
         super().__init__(self.message)
 
 
-class TigeraCharm(CharmBase):
+class CalicoEnterpriseCharm(CharmBase):
     """Charm the Tigera Calico EE."""
 
     stored = StoredState()
@@ -85,13 +86,15 @@ class TigeraCharm(CharmBase):
         self.framework.observe(self.on.upgrade_charm, self.on_upgrade_charm)
         self.framework.observe(self.on.cni_relation_joined, self.on_cni_relation_joined)
         self.framework.observe(self.on.cni_relation_changed, self.on_cni_relation_changed)
-        self.framework.observe(self.on.calico_enterprise_relation_changed, self.on_config_changed)
         self.framework.observe(self.on.start, self.on_config_changed)
         self.framework.observe(self.on.upgrade_charm, self.on_config_changed)
 
         self.stored.set_default(tigera_configured=False)
         self.stored.set_default(pod_restart_needed=False)
         self.stored.set_default(tigera_cni_configured=False)
+
+        self.peers = CalicoEnterprisePeer(self)
+        self.framework.observe(self.peers.on.bgp_parameters_changed, self.on_config_changed)
 
         # try:
         #     self.CTL = getContainerRuntimeCtl()
@@ -155,27 +158,9 @@ class TigeraCharm(CharmBase):
         template.stream(**kwargs).dump(destination)
         return destination
 
-    def calico_enterprise_peer_data(self, key):
-        """Return the agreed data associated with the key from each calico-enterprise unit including self.
-
-        If there isn't unity in the relation, return None.
-        """
-        joined_data = set()
-        for relation in self.model.relations["calico-enterprise"]:
-            for unit in relation.units | {self.unit}:
-                data = relation.data[unit].get(key)
-                joined_data.add(data)
-        filtered = set(filter(bool, joined_data))
-        return filtered.pop() if len(filtered) == 1 else None
-
     def get_ip_range(self, n):
         """Return the # of bits that compose its range from an IPAddress."""
         return str(n).split("/")[1]
-
-    @property
-    def bgp_parameters(self):
-        """Return bgp parameter as a dict."""
-        return yaml.safe_load(self.model.config["bgp_parameters"])
 
     def image_registry_secret(self) -> Tuple[Optional[RegistrySecret], str]:
         """Read Image Registry secret to username:password."""
@@ -203,7 +188,7 @@ class TigeraCharm(CharmBase):
 
         Returns True if successful on all checks pass, False otherwise.
         """
-        if not self.model.config["bgp_parameters"]:
+        if not self.peers.bgp_layout.nodes:
             self.unit.status = BlockedStatus("BGP configuration is required.")
             return False
 
@@ -356,18 +341,12 @@ class TigeraCharm(CharmBase):
         2) deploy cnx-node systemd
         3) wait until cnx-node is listening on port 8179
         """
-        ## TODO: implement the early_network
-        ## ...
         os.makedirs("/calico-early/", exist_ok=True)
-        self.render_template(
-            "templates/calico_bgp_layout.yaml.j2",
-            "/calico-early/cfg.yaml",
-            bgp_parameters=self.config["bgp_parameters"],
-        )
+        self.peers.bgp_layout  # TODO implement the early_network
 
     def waiting_for_cni_relation(self):
         """Check if we should wait on CNI relation or all data is available."""
-        service_cidr = self.calico_enterprise_peer_data("service-cidr")
+        service_cidr = self.peers.service_cidr
         registry = self.registry
         return not self.is_kubeconfig_available() or not service_cidr or not registry
 
@@ -376,30 +355,30 @@ class TigeraCharm(CharmBase):
         if not pathlib.Path(KUBECONFIG_PATH).exists():
             self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
             return False
-        bgp_parameters = self.model.config["bgp_parameters"]
+
         try:
             self.kubectl("create", "ns", "tigera-operator")
             self.kubectl("create", "ns", "calico-system")
         except CalledProcessError:
             pass
-        if not bgp_parameters:
-            self.unit.status = BlockedStatus("bgp_parameters is required.")
+        if not self.peers.bgp_layout.nodes:
+            self.unit.status = WaitingStatus("bgp_parameters is required.")
             return False
 
-        for node in yaml.safe_load(bgp_parameters):
+        for node in self.peers.bgp_layout.nodes:
+            hostname = node.hostname
+            if not hostname:
+                continue
+            rack = node.labels.rack
             try:
-                self.kubectl("label", "node", node["hostname"], f"rack={node['rack']}")
+                self.kubectl("label", "node", hostname, f"rack={rack}")
             except CalledProcessError:
-                log.warning(f"Node labelling failed. Does {node['hostname']} exist?")
+                log.warning(f"Node labelling failed. Does {hostname} exist?")
                 pass
 
-        self.render_template(
-            "bgp_layout.yaml.j2",
-            "/tmp/bgp_layout.yaml",
-            bgp_parameters=self.bgp_parameters,
-        )
-        self.kubectl("apply", "-n", "tigera-operator", "-f", "/tmp/bgp_layout.yaml")
-        # self.kubectl("apply", "-n", "calico-system", "-f", "/tmp/bgp_layout.yaml")
+        with tempfile.NamedTemporaryFile("w") as bgp_layout:
+            yaml.safe_dump(self.peers.bgp_layout_config_map, stream=bgp_layout)
+            self.kubectl("apply", "-n", "tigera-operator", "-f", bgp_layout.name)
 
         return True
 
@@ -422,7 +401,7 @@ class TigeraCharm(CharmBase):
         self.render_template(
             "bgppeer.yaml.j2",
             "/tmp/bgppeer.yaml",
-            bgp_parameters=self.bgp_parameters,
+            peer_set=self.peers.bgp_peer_set,
         )
         self.kubectl("apply", "-n", "tigera-operator", "-f", "/tmp/bgppeer.yaml")
         self.render_template(
@@ -522,7 +501,6 @@ class TigeraCharm(CharmBase):
             # TODO: Enters a defer loop
             # event.defer()
             return
-        service_cidr = self.calico_enterprise_peer_data("service-cidr")
 
         if self.waiting_for_cni_relation():
             self.unit.status = WaitingStatus("Waiting for CNI relation")
@@ -598,13 +576,11 @@ class TigeraCharm(CharmBase):
             image_prefix=self.model.config["image_prefix"],
             nic_autodetection=nic_autodetection,
         )
-        self.render_template(
-            "bgpconfiguration.yaml.j2",
-            "/tmp/calico_bgp_configuration.yaml",
-            service_cidr=service_cidr,
-        )
         self.kubectl("apply", "-f", "/tmp/calico_enterprise_install.yaml")
-        self.kubectl("apply", "-f", "/tmp/calico_bgp_configuration.yaml")
+
+        with tempfile.NamedTemporaryFile("w") as bgp_configuration:
+            yaml.safe_dump(self.peers.bgp_configuration, stream=bgp_configuration)
+            self.kubectl("apply", "-f", bgp_configuration.name)
 
         if self.model.config["addons"]:
             self.unit.status = MaintenanceStatus("Applying Addons")
@@ -625,4 +601,4 @@ class TigeraCharm(CharmBase):
 
 
 if __name__ == "__main__":  # pragma: nocover
-    main(TigeraCharm)
+    main(CalicoEnterpriseCharm)
