@@ -6,55 +6,80 @@ function install_tools() {
 }
 
 function generate_ssh_keys() {
-    ssh-keygen -b 2048 -t rsa -N "" -f ${HOME}/.ssh/id_rsa
-    PRIVATE_KEY=${HOME}/.ssh/id_rsa
-    PUBLIC_KEY=${HOME}/.ssh/id_rsa.pub
+    local juju_ssh=${HOME}/.local/share/juju/ssh
+    if [ -d "${juju_ssh}" ]; then
+        PUBLIC_KEY=$(ls ${juju_ssh}/juju_*.pub | head -n1)
+        PRIVATE_KEY=$(ls ${juju_ssh}/juju_* | head -n1)
+        echo "INFO:  Using existing public/private ssh identity '${PRIVATE_KEY}'"
+    else
+        ssh-keygen -b 2048 -t rsa -N "" -f ${HOME}/.ssh/id_rsa
+        PRIVATE_KEY=${HOME}/.ssh/id_rsa
+        PUBLIC_KEY=${HOME}/.ssh/id_rsa.pub
+    fi
 
     echo "PRIVATE_KEY"="${PRIVATE_KEY}" >> "$GITHUB_ENV"
     echo "PUBLIC_KEY"="${PUBLIC_KEY}" >> "$GITHUB_ENV"
 }
 
 function apply_cloud_credentials() {
-    CLOUD_CREDS=${HOME}/cloud-creds
-    CREDENTIALS_YAML=$CLOUD_CREDS/credentials.yaml
-    CLOUDS_YAML=$CLOUD_CREDS/clouds.yaml
-    TF_SECRETS=$CLOUD_CREDS/tf_secrets.sh
-    mkdir -p $CLOUD_CREDS
-    if [ -z "$CREDENTIALS_YAML_CONTENT" ]; then
-    >&2 echo "No cloud credentials available"
-    exit -1
-    fi
-    if [ -z "$CLOUDS_YAML_CONTENT" ]; then
-    >&2 echo "No cloud yaml available"
-    exit -1
+    mkdir -p $HOME/tmp
+    JOB_TMP=$(mktemp -d -p $HOME/tmp)
+    echo "INFO:  Creating temporary job directory in $JOB_TMP"
+    if [ -d "${HOME}/.local/share/juju" ]; then
+        CREDENTIALS_YAML="${HOME}/.local/share/juju/credentials.yaml"
+        CLOUDS_YAML="${HOME}/.local/share/juju/clouds.yaml"
+    else
+        CREDENTIALS_YAML=$JOB_TMP/credentials.yaml
+        CLOUDS_YAML=$JOB_TMP/clouds.yaml
+        if [ -z "$CREDENTIALS_YAML_CONTENT" ]; then
+        >&2 echo "ERROR: No cloud credentials available for vsphere"
+        >&2 echo "       Missing CREDENTIALS_YAML_CONTENT"
+        exit -1
+        fi
+        if [ -z "$CLOUDS_YAML_CONTENT" ]; then
+        >&2 echo "ERROR: No cloud yaml available for vsphere"
+        >&2 echo "       Missing CLOUDS_YAML_CONTENT"
+        exit -1
+        fi
+        echo "${CREDENTIALS_YAML_CONTENT}" | base64 -d > $CREDENTIALS_YAML
+        echo "${CLOUDS_YAML_CONTENT}" | base64 -d > $CLOUDS_YAML
     fi
 
-    echo "${CREDENTIALS_YAML_CONTENT}" | base64 -d > $CREDENTIALS_YAML
-    echo "${CLOUDS_YAML_CONTENT}" | base64 -d > $CLOUDS_YAML
-    VSPHERE_USER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-ci.user)
+    TF_SECRETS=$JOB_TMP/tf_secrets.sh
+
     VSPHERE_ENDPOINT=$(cat $CLOUDS_YAML | yq -r .clouds.vsphere.endpoint)
-    VSPHERE_PASS=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-ci.password)
-    VSPHERE_FOLDER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.vsphere-ci.vmfolder)
-    VSPHERE_FOLDER="${VSPHERE_FOLDER}/Calico Enterprise ($GITHUB_SHA)"
+    for user in 'vsphere-ci' 'vsphere-crew'; do
+        VSPHERE_USER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.$user.user)
+        VSPHERE_PASS=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.$user.password)
+        VSPHERE_FOLDER=$(cat $CREDENTIALS_YAML | yq -r .credentials.vsphere.$user.vmfolder)
+        if [ $VSPHERE_USER != "null" ]; then break; fi
+    done
+    VSPHERE_FOLDER="${VSPHERE_FOLDER}/Calico-Enterprise-$GITHUB_SHA"
 
     if [ "$VSPHERE_ENDPOINT" == "null" ]; then
-    >&2 echo "No vsphere endpoint detected"
+    >&2 echo "ERROR: No vsphere endpoint detected"
     exit -1
     fi
     if [ "$VSPHERE_USER" == "null" ]; then
-    >&2 echo "No vsphere user detected"
+    >&2 echo "ERROR: No vsphere user detected"
     exit -1
     fi
     if [ "$VSPHERE_PASS" == "null" ]; then
-    >&2 echo "No vsphere password detected"
+    >&2 echo "ERROR: No vsphere password detected"
+    exit -1
+    fi
+    if [ -z "$CHARM_TIGERA_EE_REG_SECRET" ]; then
+    >&2 echo "ERROR: No Registry Secret for pulling tigera image"
+    >&2 echo "       Missing CHARM_TIGERA_EE_REG_SECRET"
     exit -1
     fi
 
-    cp .github/data/proxy_config.yaml $CLOUD_CREDS/proxy_config.yaml
+    cp .github/data/proxy_config.yaml $JOB_TMP/proxy_config.yaml
 
     echo "VSPHERE_FOLDER"="$VSPHERE_FOLDER" >> "$GITHUB_ENV"
+    echo "JOB_TMP"="$JOB_TMP" >> "$GITHUB_ENV"
     echo "TF_SECRETS"="$TF_SECRETS" >> "$GITHUB_ENV"
-    echo "MODEL_CONFIG"="$CLOUD_CREDS/proxy_config.yaml" >> "$GITHUB_ENV"
+    echo "MODEL_CONFIG"="$JOB_TMP/proxy_config.yaml" >> "$GITHUB_ENV"
     echo "TF_VAR_vsphere_server"="$VSPHERE_ENDPOINT" >> $TF_SECRETS
     echo "TF_VAR_vsphere_user"="$VSPHERE_USER" >> $TF_SECRETS
     echo "TF_VAR_vsphere_password"="$VSPHERE_PASS" >> $TF_SECRETS
@@ -67,13 +92,30 @@ function terraform_cloud() {
     set +a
     terraform -chdir=tests/testing-environment/vmware init
     terraform -chdir=tests/testing-environment/vmware apply \
-    -var="vsphere_folder=${VSPHERE_FOLDER}" \
-    -var="juju_authorized_key=$(cat ${PUBLIC_KEY})" \
-    -auto-approve
+      -var="vsphere_folder=${VSPHERE_FOLDER}" \
+      -var="juju_authorized_key=$(cat ${PUBLIC_KEY})" \
+      -auto-approve
     TOR1_IP=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.tor1.value')
     TOR2_IP=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.tor2.value')
     K8S_IPS=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.k8s_addresses.value | to_entries | .[].value')
     CONTROLLER_IP=$(terraform -chdir=tests/testing-environment/vmware output -json | yq '.controller.value')
+
+    if [ "$TOR1_IP" == "null" ]; then
+    >&2 echo "ERROR: Tor1 VM not started"
+    >&2 echo "       Check Terraform logs"
+    exit -1
+    fi
+    if [ "$TOR2_IP" == "null" ]; then
+    >&2 echo "ERROR: Tor2 VM not started"
+    >&2 echo "       Check Terraform logs"
+    exit -1
+    fi
+    if [ "$CONTROLLER_IP" == "null" ]; then
+    >&2 echo "ERROR: Controller VM not started"
+    >&2 echo "       Check Terraform logs"
+    exit -1
+    fi
+
     MANUAL_CLOUD_YAML=$(cat << EOF | base64 -w0
 clouds:
     manual-cloud:
@@ -85,7 +127,8 @@ EOF
     echo ${MANUAL_CLOUD_YAML} | base64 -d
     echo ------------------
 
-    ssh ubuntu@$CONTROLLER_IP -o "StrictHostKeyChecking no" -- 'cloud-init status --wait'
+    ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$CONTROLLER_IP"
+    ssh ubuntu@$CONTROLLER_IP -i ${PRIVATE_KEY} -o "StrictHostKeyChecking no" -- 'cloud-init status --wait'
 
     echo "TOR1_IP"="$TOR1_IP" >> "$GITHUB_ENV"
     echo "TOR2_IP"="$TOR2_IP" >> "$GITHUB_ENV"
@@ -95,14 +138,21 @@ EOF
 }
 
 function juju_create_manual_model() {
+    if [ "$(juju clouds --format json 2>/dev/null | yq .manual-cloud)" == "null" ]; then
+        echo $MANUAL_CLOUD_YAML | base64 -d > $JOB_TMP/manual-cloud.yaml
+        juju add-cloud manual-cloud -f $JOB_TMP/manual-cloud.yaml --client
+        juju bootstrap manual-cloud
+    fi
+
     juju add-model ${JUJU_MODEL} --config="${MODEL_CONFIG}"
     juju add-space bgp
     juju add-space mgmt
     juju add-space tor-network
     juju model-config default-space=mgmt
     for addr in ${K8S_IPS//,/ }; do
-        echo "Enlisting machine at $addr"
-        ssh ubuntu@$addr -o "StrictHostKeyChecking no" -- 'hostname; cloud-init status --wait'
+        echo "INFO:  Enlisting machine at $addr"
+        ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$addr"
+        ssh ubuntu@$addr -i ${PRIVATE_KEY} -o "StrictHostKeyChecking no" -- 'hostname; cloud-init status --wait'
         juju add-machine ssh:ubuntu@$addr
     done
     juju wait-for model ${JUJU_MODEL} --query='forEach(machines, mac => mac.status == "started")' --timeout=5m
@@ -131,12 +181,6 @@ function terraform_teardown() {
     echo "CONTROLLER_NAME"="" >> "$GITHUB_ENV"
 }
 
-function test_method() {
-    echo last call - \'test_method ${TEST_METHOD_LAST_ARGS}\'
-    echo this call - \'test_method $@\'
-    echo "TEST_METHOD_LAST_ARGS"=\"$@\" >> "$GITHUB_ENV"
-}
-
 # Call a bash function with the remaining arguments
 if [ -z ${GITHUB_ENV+x} ]; then
     # Not under a github env, create a mock env file
@@ -145,6 +189,14 @@ if [ -z ${GITHUB_ENV+x} ]; then
     set -a
     . $GITHUB_ENV
     set +a
+fi
+
+if [ -z ${GITHUB_SHA} ]; then
+    GITHUB_SHA=$(git rev-parse --short HEAD)
+fi
+
+if [ -z ${JUJU_MODEL} ]; then
+    JUJU_MODEL="calico-enterprise"
 fi
 
 $1 "${@:2}"

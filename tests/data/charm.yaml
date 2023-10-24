@@ -21,8 +21,6 @@ applications:
       license: |- 
         {{tigera_ee_license|indent(8)}}
       # tigera_features: "early-networking"
-      bgp_parameters: |-
-        {{bgp_parameters|indent(8)}}
   easyrsa:
     to: 
       - "0"

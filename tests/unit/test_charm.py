@@ -8,22 +8,28 @@ import unittest.mock as mock
 
 import ops.testing
 import pytest
-from charm import TigeraCharm
+from charm import CalicoEnterpriseCharm
 from ops.model import BlockedStatus, MaintenanceStatus
 
 DEFAULT_SERVICE_CIDR = "10.152.183.0/24"
 
 
-TEST_CONFIGURE_BGP_INPUT = """- hostname: test
-  asn: 1
-  interfaces:
-  - IP: 20.20.20.20
-    peerASN: 20
-    peerIP: 30.30.30.30
-  rack: r
-  stableAddress: 10.10.10.10"""
+TEST_CONFIGURE_BGP_INPUT = """
+- hostname: test
+  asNumber: 1
+  interfaceAddresses:
+  - 20.20.20.20
+  peerings:
+  - peerIP: 30.30.30.30
+    peerASNumber: 20
+  labels:
+    rack: r
+  stableAddress:
+    address: 10.10.10.10
+""".strip()
 
-TEST_CONFIGURE_BGP_BGPLAYOUT_YAML = """apiVersion: crd.projectcalico.org/v1
+TEST_CONFIGURE_BGP_BGPLAYOUT_YAML = """
+apiVersion: crd.projectcalico.org/v1
 kind: EarlyNetworkConfiguration
 spec:
  nodes:
@@ -34,9 +40,10 @@ spec:
    asNumber: 1
    peerings:
      - peerIP: 30.30.30.30
-     - peerASN: 20
+     - peerASNunmber: 20
    labels:
-     rack: r"""
+     rack: r
+""".strip()
 
 TEST_CONFIGURE_BGP_BGPPEER_YAML = """
 apiVersion: crd.projectcalico.org/v1
@@ -83,7 +90,7 @@ spec:
 
 @pytest.fixture
 def harness():
-    harness = ops.testing.Harness(TigeraCharm)
+    harness = ops.testing.Harness(CalicoEnterpriseCharm)
     try:
         yield harness
     finally:
@@ -121,22 +128,13 @@ def test_configure_bgp(mock_stream, charm, harness):
         "bgp_parameters": TEST_CONFIGURE_BGP_INPUT,
         "pod_cidr_block_size": "24",
     }
+    harness.disable_hooks()
     harness.update_config(config_dict)
     charm.configure_bgp()
-    _, args, _ = mock_stream.mock_calls[0]
-    assert args[0].render(bgp_parameters=charm.bgp_parameters) == TEST_CONFIGURE_BGP_BGPPEER_YAML
-    # pod_cidr_range=self.model.config["pod_cidr_block_size"],
-    # pod_cidr=self.model.config["pod_cidr"],
-    # stable_ip_cidr=self.model.config["stable_ip_cidr"],
-    _, args, _ = mock_stream.mock_calls[2]
-    assert (
-        args[0].render(
-            pod_cidr_range=config_dict["pod_cidr_block_size"],
-            pod_cidr=config_dict["pod_cidr"],
-            stable_ip_cidr=config_dict["stable_ip_cidr"],
-        )
-        == TEST_CONFIGURE_BGP_IPPOOLS_YAML
-    )
+    _, args, kwargs = mock_stream.mock_calls[0]
+    assert args[0].render(**kwargs) == TEST_CONFIGURE_BGP_BGPPEER_YAML
+    _, args, kwargs = mock_stream.mock_calls[2]
+    assert args[0].render(**kwargs) == TEST_CONFIGURE_BGP_IPPOOLS_YAML
 
 
 def test_is_kubeconfig_available(harness, charm):
@@ -147,28 +145,6 @@ def test_is_kubeconfig_available(harness, charm):
 
     harness.update_relation_data(rel_id, "kubernetes-control-plane/0", {"kubeconfig-hash": "1234"})
     assert charm.is_kubeconfig_available()
-
-
-def test_get_service_cidr(harness, charm):
-    harness.disable_hooks()
-    rel_id = harness.add_relation("calico-enterprise", "calico-enterprise")
-    harness.add_relation_unit(rel_id, "calico-enterprise/0")
-    assert not charm.calico_enterprise_peer_data("service-cidr")
-
-    harness.update_relation_data(
-        rel_id,
-        "calico-enterprise/0",
-        {"service-cidr": DEFAULT_SERVICE_CIDR},
-    )
-    assert charm.calico_enterprise_peer_data("service-cidr") == DEFAULT_SERVICE_CIDR
-
-    harness.add_relation_unit(rel_id, "calico-enterprise/1")
-    harness.update_relation_data(
-        rel_id,
-        "calico-enterprise/1",
-        {"service-cidr": "working"},
-    )
-    assert charm.calico_enterprise_peer_data("service-cidr") is None
 
 
 def test_configure_cni_relation(harness, charm):
