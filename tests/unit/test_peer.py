@@ -4,6 +4,7 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import unittest.mock as mock
+from ipaddress import ip_address
 from textwrap import indent
 
 import ops.testing
@@ -46,6 +47,17 @@ spec:
         yield patched
 
 
+@pytest.fixture
+def localhost_ips():
+    with mock.patch("peer._localhost_ips") as patched:
+        patched.return_value = [
+            ip_address("127.0.0.1"),
+            ip_address("10.10.10.1"),
+            ip_address("::1"),
+        ]
+        yield patched
+
+
 LOCAL_BGP_PARAMS = """
 asNumber: 20001
 interfaceAddresses:
@@ -79,7 +91,7 @@ REMOTE_BGP_PARAMS = """{
 }"""
 
 
-def test_peer_relation_data(harness, charm, early_service):
+def test_peer_relation_data(harness, charm, early_service, localhost_ips):
     rel_id = 0  # peer-relation is always 0
     harness.add_relation_unit(rel_id, "calico-enterprise/0")
     harness.set_leader(True)
