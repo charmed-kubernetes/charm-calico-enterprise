@@ -18,7 +18,7 @@ options:
     default: ""
     type: string
     description: |
-      LicenseKey should be a file, appiled as a bas64 string
+      LicenseKey should be a file, applied as a bas64 string
 
       file format:
           kind: LicenseKey
@@ -27,7 +27,8 @@ options:
             certificate: <content>
             token: <content>
 
-      $ juju config calico-enterprise license="$(cat license | base64 -w0)"
+      example use:
+      juju config calico-enterprise license="$(cat license | base64 -w0)"
   addons:
     default: False
     type: boolean
@@ -66,7 +67,10 @@ options:
     default: ""
     type: string
     description: |
-      String in the format of "user:password" run through base64 encoding
+      Credentials in the format <user>:<password>, applied as a bas64 string
+
+      example use:
+      juju config calico-enterprise image_registry_secret="$(echo user:password | base64 -w0)"
   tigera_version:
     default: 'distro'
     type: string
@@ -119,10 +123,9 @@ options:
     description: |
       If set, BGP will be configured in the early stage (pre-k8s) and passed on to k8s. 
       If the configuration is unset or has a string len=0, then bgp_parameters is considered
-      empty. This option can be configured as follows:
-        $ juju config tigera bgp_parameters="$(cat bgp_params.yaml)"
+      empty.
 
-      For example:
+      file format:
       - hostname: <hostname>
         asn: <number>
         stableAddress: <IP>
@@ -136,3 +139,5 @@ options:
           peerASN: <2>
         - ...
 
+      example use:
+      juju config calico-enterprise bgp_parameters="$(cat bgp_params.yaml)"
