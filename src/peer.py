@@ -4,6 +4,7 @@ import logging
 import socket
 from ipaddress import ip_address
 from pathlib import Path
+from subprocess import CalledProcessError, check_output
 from typing import List, Mapping, Optional, Set
 
 import yaml
@@ -22,6 +23,20 @@ def _valid_ip(value: str) -> str:
 
 def _read_file_content(path: Path) -> Optional[str]:
     return path.read_text() if path.exists() else None
+
+
+def _localhost_ips() -> List[ip_address]:
+    try:
+        lo_ifc = yaml.safe_load(check_output(["ip", "--json", "addr", "show", "lo"]))
+    except (CalledProcessError, yaml.YAMLError):
+        log.exception("Couldn't fetch the ip addresses of lo")
+        return []
+    return [
+        ip_address(addr["local"])
+        for ifc in lo_ifc
+        if ifc["ifname"] == "lo"
+        for addr in ifc["addr_info"]
+    ]
 
 
 class BGPPeer(BaseModel):
@@ -101,10 +116,19 @@ def _early_service_cfg() -> Optional[BGPParameters]:
         log.warning(f"Couldn't find calico early config in {yaml_location}")
         return None
 
+    stable_address = None
+    for ip in _localhost_ips():
+        if not ip.is_loopback:
+            stable_address = ip
+
     early_cfg = yaml.safe_load(content)
     try:
-        node = early_cfg["spec"]["nodes"][0]
-    except (TypeError, KeyError, IndexError):
+        for node in early_cfg["spec"]["nodes"]:
+            if node["stableAddress"]["address"] == str(stable_address):
+                break
+        else:
+            raise KeyError(f"No node matches {stable_address}")
+    except (TypeError, KeyError):
         log.warning(f"Config File didn't contain spec.nodes in config={yaml_location}")
         return None
     hostname = socket.gethostname()
