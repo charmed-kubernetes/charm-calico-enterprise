@@ -1,16 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
-#
-# Learn more at: https://juju.is/docs/sdk
-
-"""Charm the service.
-
-Refer to the following post for a quick-start guide that will help you
-develop a new k8s charm using the Operator Framework:
-
-https://discourse.charmhub.io/t/4208
-"""
+"""Dispatch logic for the calico-enterprise networking charm."""
 
 import binascii
 import ipaddress
@@ -166,7 +157,7 @@ class CalicoEnterpriseCharm(CharmBase):
         """Read Image Registry secret to username:password."""
         value = self.model.config["image_registry_secret"]
         if not value:
-            return None, "Registry secret is required"
+            return None, "Missing required 'image_registry_secret' config"
         try:
             decoded = b64decode(value).decode()
         except (binascii.Error, UnicodeDecodeError):
@@ -174,7 +165,7 @@ class CalicoEnterpriseCharm(CharmBase):
             decoded = value
         split = decoded.split(":")
         if len(split) != 2:
-            return None, "Registry secret isn't formatted as <user:pass>"
+            return None, "Registry secret isn't formatted as <user>:<password>"
         return RegistrySecret(*split), ""
 
     #######################
@@ -198,18 +189,18 @@ class CalicoEnterpriseCharm(CharmBase):
             return False
 
         if not self.model.config["license"]:
-            self.unit.status = BlockedStatus("Missing license config")
+            self.unit.status = BlockedStatus("Missing required 'license' config")
             return False
 
         try:
             ipaddress.ip_network(self.model.config["pod_cidr"])
         except ValueError:
-            self.unit.status = BlockedStatus("Pod-to-Pod configuration is not valid CIDR")
+            self.unit.status = BlockedStatus("'pod_cidr' config is not valid CIDR")
             return False
         try:
             ipaddress.ip_network(self.model.config["stable_ip_cidr"])
         except ValueError:
-            self.unit.status = BlockedStatus("Stable IP network is not valid CIDR")
+            self.unit.status = BlockedStatus("'stable_ip_cidr' config is not valid CIDR")
             return False
         # TODO: Fix this logic check.
         # hostname_found = False
@@ -353,7 +344,10 @@ class CalicoEnterpriseCharm(CharmBase):
     def pre_tigera_init_config(self):
         """Create required namespaces and label nodes before creating bgp_layout."""
         if not pathlib.Path(KUBECONFIG_PATH).exists():
-            self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
+            self.unit.status = WaitingStatus("Waiting for Kubeconfig to become available")
+            return False
+        if not self.peers.bgp_layout.nodes:
+            self.unit.status = WaitingStatus("Waiting for BGP data from peers")
             return False
 
         try:
@@ -361,10 +355,6 @@ class CalicoEnterpriseCharm(CharmBase):
             self.kubectl("create", "ns", "calico-system")
         except CalledProcessError:
             pass
-        if not self.peers.bgp_layout.nodes:
-            self.unit.status = WaitingStatus("bgp_parameters is required.")
-            return False
-
         for node in self.peers.bgp_layout.nodes:
             hostname = node.hostname
             if not hostname:
@@ -428,8 +418,8 @@ class CalicoEnterpriseCharm(CharmBase):
     def on_install(self, event):
         """Installation routine.
 
-        Execute the Early Network stage if requested. The config of Tigera itself depends on k8s deployed
-        and should be executed in the config-changed hook.
+        Execute the Early Network stage if requested. The config of Tigera itself depends on k8s
+        deployed and should be executed in the config-changed hook.
         """
         if not self.model.config["disable_early_network"]:
             self.implement_early_network()
@@ -477,8 +467,8 @@ class CalicoEnterpriseCharm(CharmBase):
     def on_config_changed(self, event):  # noqa C901, TODO: consider using reconciler
         """Config changed event processing.
 
-        The leader needs to know the BGP information about every node and only the leader should apply
-        the changes in the deployment.
+        The leader needs to know the BGP information about every node and only the leader should
+        apply the changes in the deployment.
         1) Check if the CNI relation exists
         2) Return if not leader
         3) Apply tigera operator
@@ -488,6 +478,7 @@ class CalicoEnterpriseCharm(CharmBase):
             # TODO: Enters a defer loop
             # event.defer()
             return
+
         if not self.unit.is_leader():
             # Only the leader should manage the operator setup
             log.info(
