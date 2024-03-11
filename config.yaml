@@ -67,7 +67,7 @@ options:
     default: ""
     type: string
     description: |
-      Credentials in the format <user>:<password>, applied as a bas64 string
+      Credentials in the format <user>:<password>, applied as a base64 string
 
       example use:
       juju config calico-enterprise image_registry_secret="$(echo user:password | base64 -w0)"
