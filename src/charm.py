@@ -13,7 +13,7 @@ import time
 from base64 import b64decode
 from dataclasses import dataclass
 from subprocess import CalledProcessError, check_output
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 import yaml
 from jinja2 import Environment, FileSystemLoader
@@ -75,7 +75,6 @@ class CalicoEnterpriseCharm(CharmBase):
         self.framework.observe(self.on.remove, self.on_remove)
         self.framework.observe(self.on.update_status, self.on_update_status)
         self.framework.observe(self.on.upgrade_charm, self.on_upgrade_charm)
-        self.framework.observe(self.on.cni_relation_joined, self.on_cni_relation_joined)
         self.framework.observe(self.on.cni_relation_changed, self.on_cni_relation_changed)
         self.framework.observe(self.on.start, self.on_config_changed)
         self.framework.observe(self.on.upgrade_charm, self.on_config_changed)
@@ -405,7 +404,7 @@ class CalicoEnterpriseCharm(CharmBase):
 
     def set_active_status(self):
         """Set active if cni is configured."""
-        if self.stored.tigera_cni_configured:
+        if cast(bool, self.stored.tigera_cni_configured):
             self.unit.status = ActiveStatus()
             self.unit.set_workload_version(self.tigera_version)
             if self.unit.is_leader():
@@ -425,13 +424,13 @@ class CalicoEnterpriseCharm(CharmBase):
             self.implement_early_network()
 
     def on_update_status(self, event):
-        """State machine of the charm.
+        """Update status.
 
-        1) Only change the status if in active
-        2) If kubeconfig and CNI relation exist
+        Unit must be in a configured state before status updates are made.
         """
-        if isinstance(self.unit.status, ActiveStatus):
-            log.info(f"on_update_status: unit not in active status: {self.unit.status}")
+        if not cast(bool, self.stored.tigera_configured):
+            log.info("on_update_status: unit has not been configured yet; skipping status update.")
+            return
         if self.waiting_for_cni_relation():
             self.unit.status = WaitingStatus("Waiting for CNI relation")
             return
@@ -440,20 +439,12 @@ class CalicoEnterpriseCharm(CharmBase):
 
     def on_cni_relation_changed(self, event):
         """Run CNI relation changed hook."""
-        if not self.stored.tigera_configured:
+        if not cast(bool, self.stored.tigera_configured):
             self.on_config_changed(event)
 
         self.cni_to_calico_enterprise(event)
         self.configure_cni_relation()
-        self.set_active_status()
 
-    def on_cni_relation_joined(self, event):
-        """Run CNI relation joined hook."""
-        if not self.stored.tigera_configured:
-            self.on_config_changed(event)
-
-        self.cni_to_calico_enterprise(event)
-        self.configure_cni_relation()
         self.set_active_status()
 
     def on_remove(self, event):
@@ -497,13 +488,7 @@ class CalicoEnterpriseCharm(CharmBase):
             self.unit.status = WaitingStatus("Waiting for CNI relation")
             return
 
-        self.unit.status = MaintenanceStatus("Applying Tigera Operator")
-        if not self.apply_tigera_operator():
-            # TODO: Enters a defer loop
-            # event.defer()
-            return
-
-        self.unit.status = MaintenanceStatus("Configuring image secret and license file...")
+        self.unit.status = MaintenanceStatus("Configuring image secret")
         secret, err = self.image_registry_secret()
         if self.model.config["image_registry"] and secret:
             try:
@@ -527,6 +512,14 @@ class CalicoEnterpriseCharm(CharmBase):
                 "-n",
                 "tigera-operator",
             )
+
+        self.unit.status = MaintenanceStatus("Applying Tigera Operator")
+        if not self.apply_tigera_operator():
+            # TODO: Enters a defer loop
+            # event.defer()
+            return
+
+        self.unit.status = MaintenanceStatus("Configuring license")
         with tempfile.NamedTemporaryFile("w") as license:
             license.write(b64decode(self.model.config["license"]).rstrip().decode("utf-8"))
             license.flush()
