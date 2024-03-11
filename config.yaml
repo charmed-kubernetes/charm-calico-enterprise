@@ -18,7 +18,7 @@ options:
     default: ""
     type: string
     description: |
-      LicenseKey should be a file, applied as a bas64 string
+      LicenseKey should be a file, applied as a base64 string
 
       file format:
           kind: LicenseKey
