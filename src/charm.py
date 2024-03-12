@@ -262,19 +262,23 @@ class CalicoEnterpriseCharm(CharmBase):
 
         returns error in the event of a failed state.
         """
-        output = self.kubectl(
-            "get",
-            "pods",
-            "-l",
-            "k8s-app=tigera-operator",
-            "-n",
-            "tigera-operator",
-            "-o",
-            "jsonpath={.items}",
-        )
+        try:
+            output = self.kubectl(
+                "get",
+                "pods",
+                "-l",
+                "k8s-app=tigera-operator",
+                "-n",
+                "tigera-operator",
+                "-o",
+                "jsonpath={.items}",
+            )
+        except CalledProcessError:
+            log.warning("Kubectl get pods failed - tigera operator may not be deployed.")
+            output = []
         pods = yaml.safe_load(output)
         if len(pods) == 0:
-            return WaitingStatus("tigera-operator POD not found")
+            return WaitingStatus("tigera-operator POD not found yet")
         elif len(pods) > 1:
             return WaitingStatus(f"Too many tigera-operator PODs (num: {len(pods)})")
         status = pods[0]["status"]
@@ -431,9 +435,6 @@ class CalicoEnterpriseCharm(CharmBase):
         if not cast(bool, self.stored.tigera_configured):
             log.info("on_update_status: unit has not been configured yet; skipping status update.")
             return
-        if self.waiting_for_cni_relation():
-            self.unit.status = WaitingStatus("Waiting for CNI relation")
-            return
 
         self.unit.status = self.tigera_operator_deployment_status()
 
@@ -470,6 +471,10 @@ class CalicoEnterpriseCharm(CharmBase):
             # event.defer()
             return
 
+        if self.waiting_for_cni_relation():
+            self.unit.status = WaitingStatus("Waiting for CNI relation")
+            return
+
         if not self.unit.is_leader():
             # Only the leader should manage the operator setup
             log.info(
@@ -482,10 +487,6 @@ class CalicoEnterpriseCharm(CharmBase):
         if not self.pre_tigera_init_config():
             # TODO: Enters a defer loop
             # event.defer()
-            return
-
-        if self.waiting_for_cni_relation():
-            self.unit.status = WaitingStatus("Waiting for CNI relation")
             return
 
         self.unit.status = MaintenanceStatus("Configuring image secret")
