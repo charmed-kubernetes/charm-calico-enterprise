@@ -247,15 +247,21 @@ class CalicoEnterpriseCharm(CharmBase):
         if not pathlib.Path(KUBECONFIG_PATH).exists():
             self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
             return False
+
         installation_manifest = self.manifests / "tigera-operator.yaml"
-        crds_manifest = self.manifests / "custom-resources.yaml"
         try:
             self.kubectl("create", "-f", installation_manifest)
+        except CalledProcessError:
+            log.warning("Installation manifests failed - tigera operator may be incomplete.")
+
+        crds_manifest = self.manifests / "custom-resources.yaml"
+        try:
             self.kubectl("create", "-f", crds_manifest)
         except CalledProcessError:
-            # TODO implement a check which checks for tigera resources
-            log.warning("Kubectl create failed - tigera operator may not be deployed.")
-            return True
+            log.warning("CRD manifests failed - tigera operator may be incomplete.")
+
+        # TODO implement a check which checks for tigera resources
+        return True
 
     def tigera_operator_deployment_status(self) -> StatusBase:
         """Check if tigera operator is ready.
@@ -316,15 +322,19 @@ class CalicoEnterpriseCharm(CharmBase):
 
         Returns True if the tigera is ready.
         """
-        output = self.kubectl(
-            "wait",
-            "-n",
-            "tigera-operator",
-            "--for=condition=ready",
-            "pod",
-            "-l",
-            "k8s-app=tigera-operator",
-        )
+        try:
+            output = self.kubectl(
+                "wait",
+                "-n",
+                "tigera-operator",
+                "--for=condition=ready",
+                "pod",
+                "-l",
+                "k8s-app=tigera-operator",
+            )
+        except CalledProcessError:
+            pass
+
         return True if "met" in output else False
 
     def implement_early_network(self):
@@ -529,8 +539,6 @@ class CalicoEnterpriseCharm(CharmBase):
         self.unit.status = MaintenanceStatus("Generating bgp yamls...")
         self.configure_bgp()
 
-        self.unit.status = MaintenanceStatus("Applying Installation CRD")
-
         nic_autodetection = None
         if self.model.config["nic_autodetection_regex"]:
             if self.model.config["nic_autodetection_skip_interface"]:
@@ -581,6 +589,10 @@ class CalicoEnterpriseCharm(CharmBase):
             if self.check_tigera_status():
                 break
             time.sleep(24)
+        else:
+            self.unit.status = BlockedStatus("Tigera operator deployment failed: see debug logs")
+            return
+
         self.unit.status = ActiveStatus("Node Configured")
         self.stored.tigera_configured = True
 
