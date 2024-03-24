@@ -22,6 +22,7 @@ from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, StatusBase, WaitingStatus
 from peer import CalicoEnterprisePeer
+from tenacity import retry, stop_after_delay, wait_exponential
 
 VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
@@ -96,9 +97,18 @@ class CalicoEnterpriseCharm(CharmBase):
     ### Support Methods ###
     #######################
 
+    @retry(reraise=True, stop=stop_after_delay(180), wait=wait_exponential())
     def kubectl(self, *args):
-        """Kubectl command implementation."""
+        """Run a kubectl cli command with a config file.
+
+        Returns stdout or raises an error if the command fails.
+        """
+        # Retry this command for up to three minutes. The lifecycle of this charm is managed
+        # independently of our k8s api server; this means the k8s control plane may be doing
+        # something else (like restarting) when we invoke kubectl. Account for this with a
+        # sensible retry.
         cmd = ["kubectl", "--kubeconfig", KUBECONFIG_PATH] + list(args)
+        log.info("Executing {}".format(cmd))
         return check_output(cmd).decode("utf-8")
 
     def is_kubeconfig_available(self):
@@ -281,8 +291,8 @@ class CalicoEnterpriseCharm(CharmBase):
             )
         except CalledProcessError:
             log.warning("Kubectl get pods failed - tigera operator may not be deployed.")
-            output = []
-        pods = yaml.safe_load(output)
+            output = ""
+        pods = yaml.safe_load(output) if output else []
         if len(pods) == 0:
             return WaitingStatus("tigera-operator POD not found yet")
         elif len(pods) > 1:
@@ -333,7 +343,7 @@ class CalicoEnterpriseCharm(CharmBase):
                 "k8s-app=tigera-operator",
             )
         except CalledProcessError:
-            pass
+            output = ""
 
         return True if "met" in output else False
 
@@ -363,11 +373,8 @@ class CalicoEnterpriseCharm(CharmBase):
             self.unit.status = WaitingStatus("Waiting for BGP data from peers")
             return False
 
-        try:
-            self.kubectl("create", "ns", "tigera-operator")
-            self.kubectl("create", "ns", "calico-system")
-        except CalledProcessError:
-            pass
+        self.kubectl("create", "ns", "tigera-operator")
+        self.kubectl("create", "ns", "calico-system")
         for node in self.peers.bgp_layout.nodes:
             hostname = node.hostname
             if not hostname:
