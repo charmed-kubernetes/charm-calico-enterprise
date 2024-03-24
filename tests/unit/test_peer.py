@@ -1,4 +1,4 @@
-# Copyright 2023 pguimaraes
+# Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
@@ -159,7 +159,7 @@ def test_publish_bgp_parameters_no_service(harness, charm):
     harness.disable_hooks()
     with mock.patch("peer.CALICO_EARLY_SERVICE") as patched:
         patched.exists.return_value = False
-        charm.peers.pubilsh_bgp_parameters()
+        charm.peers.publish_bgp_parameters()
 
     for relation in charm.model.relations["calico-enterprise"]:
         assert relation.data[charm.model.unit].get("bgp-parameters") is None
@@ -178,7 +178,7 @@ def test_publish_bgp_parameters_invalid_calico_early(early_service, harness, cha
     elif failure == "Invalid Config":
         early_service.side_effect = ["CALICO_EARLY_NETWORKING=magic.yaml", "invalid"]
 
-    charm.peers.pubilsh_bgp_parameters()
+    charm.peers.publish_bgp_parameters()
     for relation in charm.model.relations["calico-enterprise"]:
         assert relation.data[charm.model.unit].get("bgp-parameters") is None
 
@@ -187,7 +187,7 @@ def test_publish_bgp_parameters_json_passthru(harness, charm):
     harness.disable_hooks()
     with mock.patch("peer._early_service_cfg") as patched:
         expected = patched.return_value.json.return_value = "expected"
-        charm.peers.pubilsh_bgp_parameters()
+        charm.peers.publish_bgp_parameters()
 
     for relation in charm.model.relations["calico-enterprise"]:
         assert relation.data[charm.model.unit]["bgp-parameters"] == expected

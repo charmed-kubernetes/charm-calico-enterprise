@@ -40,7 +40,7 @@ def _localhost_ips() -> List[ip_address]:
 
 
 class BGPPeer(BaseModel):
-    """Represents a host interface's bpg peer info."""
+    """Represents a host interface's bgp peer info."""
 
     ip: str = Field(alias="peerIP")
     asn: int = Field(alias="peerASNumber")
@@ -61,7 +61,7 @@ class BGPPeerBinding(BaseModel):
 
 
 class BGPLabels(BaseModel):
-    """Represents a host's bpg label info."""
+    """Represents a host's bgp label info."""
 
     rack: str
 
@@ -74,7 +74,7 @@ class StableAddress(BaseModel):
 
 
 class BGPParameters(BaseModel):
-    """Represents a host's bpg label info."""
+    """Represents a host's bgp label info."""
 
     as_number: int = Field(alias="asNumber")
     interface_addresses: List[str] = Field(alias="interfaceAddresses")
@@ -160,7 +160,7 @@ class CalicoEnterprisePeer(Object):
         self.framework.observe(events.relation_joined, self.peer_change)
         self.framework.observe(events.relation_changed, self.peer_change)
 
-    def pubilsh_bgp_parameters(self):
+    def publish_bgp_parameters(self):
         """Publish bgp parameters to peer relation."""
         if bgp_parameters := _early_service_cfg():
             for relation in self.model.relations[self.endpoint]:
@@ -171,7 +171,7 @@ class CalicoEnterprisePeer(Object):
         """Respond to any changes in the peer data."""
         if len(self._computed_bgp_layout(local_only=True).nodes) == 0:
             log.info(f"Sharing bgp params from {self.model.unit.name}")
-            self.pubilsh_bgp_parameters()
+            self.publish_bgp_parameters()
         self.on.bgp_parameters_changed.emit()
 
     def quorum_data(self, key: str) -> Optional[str]:

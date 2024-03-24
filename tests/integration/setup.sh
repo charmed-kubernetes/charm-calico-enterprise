@@ -144,7 +144,7 @@ function juju_create_manual_model() {
         juju bootstrap manual-cloud
     fi
 
-    juju add-model ${JUJU_MODEL} --config="${MODEL_CONFIG}"
+    juju add-model ${JUJU_MODEL} --config="${MODEL_CONFIG}" --config logging-config='<root>=DEBUG' --config automatically-retry-hooks=false
     juju add-space bgp
     juju add-space mgmt
     juju add-space tor-network
