@@ -1,16 +1,7 @@
 #!/usr/bin/env python3
-# Copyright 2023 pguimaraes
+# Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
-#
-# Learn more at: https://juju.is/docs/sdk
-
-"""Charm the service.
-
-Refer to the following post for a quick-start guide that will help you
-develop a new k8s charm using the Operator Framework:
-
-https://discourse.charmhub.io/t/4208
-"""
+"""Dispatch logic for the calico-enterprise networking charm."""
 
 import binascii
 import ipaddress
@@ -22,7 +13,7 @@ import time
 from base64 import b64decode
 from dataclasses import dataclass
 from subprocess import CalledProcessError, check_output
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 import yaml
 from jinja2 import Environment, FileSystemLoader
@@ -31,6 +22,7 @@ from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, StatusBase, WaitingStatus
 from peer import CalicoEnterprisePeer
+from tenacity import retry, stop_after_delay, wait_exponential
 
 VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
@@ -84,7 +76,6 @@ class CalicoEnterpriseCharm(CharmBase):
         self.framework.observe(self.on.remove, self.on_remove)
         self.framework.observe(self.on.update_status, self.on_update_status)
         self.framework.observe(self.on.upgrade_charm, self.on_upgrade_charm)
-        self.framework.observe(self.on.cni_relation_joined, self.on_cni_relation_joined)
         self.framework.observe(self.on.cni_relation_changed, self.on_cni_relation_changed)
         self.framework.observe(self.on.start, self.on_config_changed)
         self.framework.observe(self.on.upgrade_charm, self.on_config_changed)
@@ -106,9 +97,18 @@ class CalicoEnterpriseCharm(CharmBase):
     ### Support Methods ###
     #######################
 
+    @retry(reraise=True, stop=stop_after_delay(180), wait=wait_exponential())
     def kubectl(self, *args):
-        """Kubectl command implementation."""
+        """Run a kubectl cli command with a config file.
+
+        Returns stdout or raises an error if the command fails.
+        """
+        # Retry this command for up to three minutes. The lifecycle of this charm is managed
+        # independently of our k8s api server; this means the k8s control plane may be doing
+        # something else (like restarting) when we invoke kubectl. Account for this with a
+        # sensible retry.
         cmd = ["kubectl", "--kubeconfig", KUBECONFIG_PATH] + list(args)
+        log.info("Executing {}".format(cmd))
         return check_output(cmd).decode("utf-8")
 
     def is_kubeconfig_available(self):
@@ -166,7 +166,7 @@ class CalicoEnterpriseCharm(CharmBase):
         """Read Image Registry secret to username:password."""
         value = self.model.config["image_registry_secret"]
         if not value:
-            return None, "Registry secret is required"
+            return None, "Missing required 'image_registry_secret' config"
         try:
             decoded = b64decode(value).decode()
         except (binascii.Error, UnicodeDecodeError):
@@ -174,7 +174,7 @@ class CalicoEnterpriseCharm(CharmBase):
             decoded = value
         split = decoded.split(":")
         if len(split) != 2:
-            return None, "Registry secret isn't formatted as <user:pass>"
+            return None, "Registry secret isn't formatted as <user>:<password>"
         return RegistrySecret(*split), ""
 
     #######################
@@ -198,18 +198,18 @@ class CalicoEnterpriseCharm(CharmBase):
             return False
 
         if not self.model.config["license"]:
-            self.unit.status = BlockedStatus("Missing license config")
+            self.unit.status = BlockedStatus("Missing required 'license' config")
             return False
 
         try:
             ipaddress.ip_network(self.model.config["pod_cidr"])
         except ValueError:
-            self.unit.status = BlockedStatus("Pod-to-Pod configuration is not valid CIDR")
+            self.unit.status = BlockedStatus("'pod_cidr' config is not valid CIDR")
             return False
         try:
             ipaddress.ip_network(self.model.config["stable_ip_cidr"])
         except ValueError:
-            self.unit.status = BlockedStatus("Stable IP network is not valid CIDR")
+            self.unit.status = BlockedStatus("'stable_ip_cidr' config is not valid CIDR")
             return False
         # TODO: Fix this logic check.
         # hostname_found = False
@@ -257,34 +257,44 @@ class CalicoEnterpriseCharm(CharmBase):
         if not pathlib.Path(KUBECONFIG_PATH).exists():
             self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
             return False
+
         installation_manifest = self.manifests / "tigera-operator.yaml"
-        crds_manifest = self.manifests / "custom-resources.yaml"
         try:
             self.kubectl("create", "-f", installation_manifest)
+        except CalledProcessError:
+            log.warning("Installation manifests failed - tigera operator may be incomplete.")
+
+        crds_manifest = self.manifests / "custom-resources.yaml"
+        try:
             self.kubectl("create", "-f", crds_manifest)
         except CalledProcessError:
-            # TODO implement a check which checks for tigera resources
-            log.warning("Kubectl create failed - tigera operator may not be deployed.")
-            return True
+            log.warning("CRD manifests failed - tigera operator may be incomplete.")
+
+        # TODO implement a check which checks for tigera resources
+        return True
 
     def tigera_operator_deployment_status(self) -> StatusBase:
         """Check if tigera operator is ready.
 
         returns error in the event of a failed state.
         """
-        output = self.kubectl(
-            "get",
-            "pods",
-            "-l",
-            "k8s-app=tigera-operator",
-            "-n",
-            "tigera-operator",
-            "-o",
-            "jsonpath={.items}",
-        )
-        pods = yaml.safe_load(output)
+        try:
+            output = self.kubectl(
+                "get",
+                "pods",
+                "-l",
+                "k8s-app=tigera-operator",
+                "-n",
+                "tigera-operator",
+                "-o",
+                "jsonpath={.items}",
+            )
+        except CalledProcessError:
+            log.warning("Kubectl get pods failed - tigera operator may not be deployed.")
+            output = ""
+        pods = yaml.safe_load(output) if output else []
         if len(pods) == 0:
-            return WaitingStatus("tigera-operator POD not found")
+            return WaitingStatus("tigera-operator POD not found yet")
         elif len(pods) > 1:
             return WaitingStatus(f"Too many tigera-operator PODs (num: {len(pods)})")
         status = pods[0]["status"]
@@ -322,15 +332,19 @@ class CalicoEnterpriseCharm(CharmBase):
 
         Returns True if the tigera is ready.
         """
-        output = self.kubectl(
-            "wait",
-            "-n",
-            "tigera-operator",
-            "--for=condition=ready",
-            "pod",
-            "-l",
-            "k8s-app=tigera-operator",
-        )
+        try:
+            output = self.kubectl(
+                "wait",
+                "-n",
+                "tigera-operator",
+                "--for=condition=ready",
+                "pod",
+                "-l",
+                "k8s-app=tigera-operator",
+            )
+        except CalledProcessError:
+            output = ""
+
         return True if "met" in output else False
 
     def implement_early_network(self):
@@ -353,18 +367,14 @@ class CalicoEnterpriseCharm(CharmBase):
     def pre_tigera_init_config(self):
         """Create required namespaces and label nodes before creating bgp_layout."""
         if not pathlib.Path(KUBECONFIG_PATH).exists():
-            self.unit.status = BlockedStatus("Waiting for Kubeconfig to become available")
+            self.unit.status = WaitingStatus("Waiting for Kubeconfig to become available")
             return False
-
-        try:
-            self.kubectl("create", "ns", "tigera-operator")
-            self.kubectl("create", "ns", "calico-system")
-        except CalledProcessError:
-            pass
         if not self.peers.bgp_layout.nodes:
-            self.unit.status = WaitingStatus("bgp_parameters is required.")
+            self.unit.status = WaitingStatus("Waiting for BGP data from peers")
             return False
 
+        self.kubectl("create", "ns", "tigera-operator")
+        self.kubectl("create", "ns", "calico-system")
         for node in self.peers.bgp_layout.nodes:
             hostname = node.hostname
             if not hostname:
@@ -415,7 +425,7 @@ class CalicoEnterpriseCharm(CharmBase):
 
     def set_active_status(self):
         """Set active if cni is configured."""
-        if self.stored.tigera_cni_configured:
+        if cast(bool, self.stored.tigera_cni_configured):
             self.unit.status = ActiveStatus()
             self.unit.set_workload_version(self.tigera_version)
             if self.unit.is_leader():
@@ -428,42 +438,31 @@ class CalicoEnterpriseCharm(CharmBase):
     def on_install(self, event):
         """Installation routine.
 
-        Execute the Early Network stage if requested. The config of Tigera itself depends on k8s deployed
-        and should be executed in the config-changed hook.
+        Execute the Early Network stage if requested. The config of Tigera itself depends on k8s
+        deployed and should be executed in the config-changed hook.
         """
         if not self.model.config["disable_early_network"]:
             self.implement_early_network()
 
     def on_update_status(self, event):
-        """State machine of the charm.
+        """Update status.
 
-        1) Only change the status if in active
-        2) If kubeconfig and CNI relation exist
+        Unit must be in a configured state before status updates are made.
         """
-        if isinstance(self.unit.status, ActiveStatus):
-            log.info(f"on_update_status: unit not in active status: {self.unit.status}")
-        if self.waiting_for_cni_relation():
-            self.unit.status = WaitingStatus("Waiting for CNI relation")
+        if not cast(bool, self.stored.tigera_configured):
+            log.info("on_update_status: unit has not been configured yet; skipping status update.")
             return
 
         self.unit.status = self.tigera_operator_deployment_status()
 
     def on_cni_relation_changed(self, event):
         """Run CNI relation changed hook."""
-        if not self.stored.tigera_configured:
+        if not cast(bool, self.stored.tigera_configured):
             self.on_config_changed(event)
 
         self.cni_to_calico_enterprise(event)
         self.configure_cni_relation()
-        self.set_active_status()
 
-    def on_cni_relation_joined(self, event):
-        """Run CNI relation joined hook."""
-        if not self.stored.tigera_configured:
-            self.on_config_changed(event)
-
-        self.cni_to_calico_enterprise(event)
-        self.configure_cni_relation()
         self.set_active_status()
 
     def on_remove(self, event):
@@ -477,8 +476,8 @@ class CalicoEnterpriseCharm(CharmBase):
     def on_config_changed(self, event):  # noqa C901, TODO: consider using reconciler
         """Config changed event processing.
 
-        The leader needs to know the BGP information about every node and only the leader should apply
-        the changes in the deployment.
+        The leader needs to know the BGP information about every node and only the leader should
+        apply the changes in the deployment.
         1) Check if the CNI relation exists
         2) Return if not leader
         3) Apply tigera operator
@@ -488,6 +487,11 @@ class CalicoEnterpriseCharm(CharmBase):
             # TODO: Enters a defer loop
             # event.defer()
             return
+
+        if self.waiting_for_cni_relation():
+            self.unit.status = WaitingStatus("Waiting for CNI relation")
+            return
+
         if not self.unit.is_leader():
             # Only the leader should manage the operator setup
             log.info(
@@ -502,17 +506,7 @@ class CalicoEnterpriseCharm(CharmBase):
             # event.defer()
             return
 
-        if self.waiting_for_cni_relation():
-            self.unit.status = WaitingStatus("Waiting for CNI relation")
-            return
-
-        self.unit.status = MaintenanceStatus("Applying Tigera Operator")
-        if not self.apply_tigera_operator():
-            # TODO: Enters a defer loop
-            # event.defer()
-            return
-
-        self.unit.status = MaintenanceStatus("Configuring image secret and license file...")
+        self.unit.status = MaintenanceStatus("Configuring image secret")
         secret, err = self.image_registry_secret()
         if self.model.config["image_registry"] and secret:
             try:
@@ -536,6 +530,14 @@ class CalicoEnterpriseCharm(CharmBase):
                 "-n",
                 "tigera-operator",
             )
+
+        self.unit.status = MaintenanceStatus("Applying Tigera Operator")
+        if not self.apply_tigera_operator():
+            # TODO: Enters a defer loop
+            # event.defer()
+            return
+
+        self.unit.status = MaintenanceStatus("Configuring license")
         with tempfile.NamedTemporaryFile("w") as license:
             license.write(b64decode(self.model.config["license"]).rstrip().decode("utf-8"))
             license.flush()
@@ -543,8 +545,6 @@ class CalicoEnterpriseCharm(CharmBase):
 
         self.unit.status = MaintenanceStatus("Generating bgp yamls...")
         self.configure_bgp()
-
-        self.unit.status = MaintenanceStatus("Applying Installation CRD")
 
         nic_autodetection = None
         if self.model.config["nic_autodetection_regex"]:
@@ -596,6 +596,10 @@ class CalicoEnterpriseCharm(CharmBase):
             if self.check_tigera_status():
                 break
             time.sleep(24)
+        else:
+            self.unit.status = BlockedStatus("Tigera operator deployment failed: see debug logs")
+            return
+
         self.unit.status = ActiveStatus("Node Configured")
         self.stored.tigera_configured = True
 
