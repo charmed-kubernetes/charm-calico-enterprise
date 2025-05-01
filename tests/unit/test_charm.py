@@ -8,8 +8,9 @@ import unittest.mock as mock
 
 import ops.testing
 import pytest
-from charm import CalicoEnterpriseCharm
 from ops.model import BlockedStatus, MaintenanceStatus
+
+from charm import CalicoEnterpriseCharm
 
 DEFAULT_SERVICE_CIDR = "10.152.183.0/24"
 

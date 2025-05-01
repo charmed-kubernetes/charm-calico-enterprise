@@ -8,7 +8,7 @@ on:
 jobs:
   call-inclusive-naming-check:
     name: Inclusive Naming
-    uses: canonical-web-and-design/Inclusive-naming/.github/workflows/woke.yaml@main
+    uses: canonical/inclusive-naming/.github/workflows/woke.yaml@main
     with:
       fail-on-error: "true"
 
@@ -16,13 +16,13 @@ jobs:
     name: Lint Unit
     uses: charmed-kubernetes/workflows/.github/workflows/lint-unit.yaml@main
     with:
-      python: "['3.8', '3.9', '3.10', '3.11']"
-    needs: 
+      python: "['3.10', '3.12']"
+    needs:
       - call-inclusive-naming-check
 
   integration-test:
     name: VSphere Integration Test
-    needs: 
+    needs:
       - lint-unit
     runs-on: self-hosted
     env:
@@ -36,10 +36,13 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v3
+      - name: Read charmcraft version file
+        id: charmcraft
+        run: echo "channel=$(cat .charmcraft-channel)" >> $GITHUB_OUTPUT
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: "3.10"
 
       - name: Install Tools
         run: tests/integration/setup.sh install_tools
@@ -57,7 +60,8 @@ jobs:
         uses: charmed-kubernetes/actions-operator@main
         with:
           provider: manual-cloud
-          juju-channel: 3.1/stable
+          juju-channel: 3/stable
+          charmcraft-channel: ${{ steps.charmcraft.outputs.channel }}
           credentials-yaml: ${{ secrets.CREDENTIALS_YAML }}
           clouds-yaml: ${{ env.MANUAL_CLOUD_YAML }}
           bootstrap-constraints: ""

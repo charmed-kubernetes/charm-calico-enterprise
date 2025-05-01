@@ -9,6 +9,7 @@ from textwrap import indent
 
 import ops.testing
 import pytest
+
 from charm import CalicoEnterpriseCharm
 
 

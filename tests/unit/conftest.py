@@ -1,6 +1,7 @@
 import unittest.mock as mock
 
 import pytest
+
 from charm import CalicoEnterpriseCharm
 
 

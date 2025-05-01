@@ -21,8 +21,9 @@ from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, StatusBase, WaitingStatus
-from peer import CalicoEnterprisePeer
 from tenacity import retry, stop_after_delay, wait_exponential
+
+from peer import CalicoEnterprisePeer
 
 VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
